@@ -14,10 +14,6 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-    <!-- Google API Scripts -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://apis.google.com/js/api.js"></script>
-
     <style>
         body { font-family: 'Inter', sans-serif; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
@@ -89,9 +85,6 @@
             </nav>
             
             <div class="p-4 border-t border-white/10 text-xs text-white/50 text-center">
-                <div id="connection-status" class="mb-2 px-2 py-1 rounded bg-black/20 text-white flex items-center justify-center gap-1">
-                    <div class="w-2 h-2 rounded-full bg-green-400"></div> Online
-                </div>
                 &copy; 2024 <span id="footer-school-name">Pondok Pesantren</span>
             </div>
         </aside>
@@ -163,17 +156,6 @@
             isOffline: false,
             appId: 'default-app-id',
             genderFilter: 'L', // 'L' for Putra, 'P' for Putri
-            
-            // Google Drive State
-            gDrive: {
-                connected: false,
-                tokenClient: null,
-                accessToken: null,
-                config: { 
-                    clientId: '133835424632-crnnjf5mhr3g2bl4fsqvh13hld6h92gc.apps.googleusercontent.com', 
-                    apiKey: 'AIzaSyDySWvaM7P-P3-kmDGNnUCt2TmZQ1XKg8A' 
-                }
-            }
         };
 
         const activities = [
@@ -182,150 +164,47 @@
             'Isya & Taklim', 'Tahajud'
         ];
 
-        // --- GOOGLE DRIVE ADAPTER (Same as before) ---
-        const GDriveAdapter = {
-            init: () => {
-                const configStr = localStorage.getItem('gdrive_config');
-                if (configStr) {
-                    const localCfg = JSON.parse(configStr);
-                    if(localCfg.clientId) state.gDrive.config = localCfg;
-                }
-                if(state.gDrive.config.clientId && state.gDrive.config.apiKey) {
-                    GDriveAdapter.loadGapi();
-                }
-            },
-            loadGapi: () => {
-                if (typeof gapi === 'undefined') return;
-                gapi.load('client', async () => {
-                    try {
-                        await gapi.client.init({
-                            apiKey: state.gDrive.config.apiKey,
-                            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-                        });
-                        state.gDrive.tokenClient = google.accounts.oauth2.initTokenClient({
-                            client_id: state.gDrive.config.clientId,
-                            scope: 'https://www.googleapis.com/auth/drive.file',
-                            callback: (tokenResponse) => {
-                                state.gDrive.accessToken = tokenResponse.access_token;
-                                state.gDrive.connected = true;
-                                renderApp(); 
-                                alert("Login Google Berhasil! Fitur Backup Aktif.");
-                            },
-                        });
-                    } catch(err) { console.error("GAPI Init Error", err); }
-                });
-            },
-            login: () => {
-                if(state.gDrive.tokenClient) {
-                    state.gDrive.tokenClient.requestAccessToken();
-                } else {
-                    alert("Sedang memuat layanan Google... Coba refresh halaman.");
-                }
-            },
-            saveToDrive: async () => {
-                if (!state.gDrive.accessToken) return alert("Silakan Login Google Terlebih Dahulu");
-                const dataToSave = {
-                    santriList: state.santriList,
-                    attendanceRecords: state.attendanceRecords,
-                    schoolProfile: state.schoolProfile,
-                    backupDate: new Date().toISOString()
-                };
-                const fileContent = JSON.stringify(dataToSave);
-                const fileMetadata = { 'name': 'siap_pesantren_backup.json', 'mimeType': 'application/json' };
-                try {
-                    const q = "name = 'siap_pesantren_backup.json' and trashed = false";
-                    const response = await gapi.client.drive.files.list({ q: q, fields: 'files(id, name)' });
-                    const files = response.result.files;
-                    if (files && files.length > 0) {
-                        const fileId = files[0].id;
-                        await gapi.client.request({
-                            path: '/upload/drive/v3/files/' + fileId,
-                            method: 'PATCH',
-                            params: { uploadType: 'media' },
-                            body: fileContent
-                        });
-                        alert("Backup Berhasil Diperbarui di Google Drive!");
-                    } else {
-                        const form = new FormData();
-                        form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-                        form.append('file', new Blob([fileContent], { type: 'application/json' }));
-                        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                            method: 'POST',
-                            headers: new Headers({ 'Authorization': 'Bearer ' + state.gDrive.accessToken }),
-                            body: form
-                        });
-                        alert("Backup Baru Berhasil Dibuat di Google Drive!");
-                    }
-                } catch (err) { alert("Gagal upload: " + err.message); }
-            },
-            loadFromDrive: async () => {
-                 if (!state.gDrive.accessToken) return alert("Silakan Login Google Terlebih Dahulu");
-                 try {
-                    const q = "name = 'siap_pesantren_backup.json' and trashed = false";
-                    const response = await gapi.client.drive.files.list({ q: q, fields: 'files(id, name)' });
-                    const files = response.result.files;
-                    if (files && files.length > 0) {
-                        const fileId = files[0].id;
-                        const fileRes = await gapi.client.drive.files.get({ fileId: fileId, alt: 'media' });
-                        const data = fileRes.result;
-                        if(data && confirm(`Ditemukan backup tanggal ${new Date(data.backupDate).toLocaleString()}. Pulihkan data?`)) {
-                             if(data.santriList) {
-                                state.santriList = data.santriList;
-                                if(state.isOffline) localStorage.setItem('siap_santri', JSON.stringify(data.santriList));
-                             }
-                             if(data.attendanceRecords) {
-                                state.attendanceRecords = data.attendanceRecords;
-                                if(state.isOffline) localStorage.setItem('siap_absensi', JSON.stringify(data.attendanceRecords));
-                             }
-                             if(data.schoolProfile) {
-                                state.schoolProfile = data.schoolProfile;
-                                if(state.isOffline) localStorage.setItem('siap_profile', JSON.stringify(data.schoolProfile));
-                             }
-                             alert("Data berhasil dipulihkan!");
-                             renderApp();
-                        }
-                    } else { alert("Tidak ditemukan file backup di Drive Anda."); }
-                 } catch (err) { alert("Gagal mengambil data: " + err.message); }
-            }
-        };
-
-        // --- DATA ADAPTER (Hybrid) ---
+        // --- DATA ADAPTER (Hybrid - Simplified) ---
         const DataAdapter = {
             init: async () => {
-                GDriveAdapter.init(); 
-                const userConfigStr = localStorage.getItem('user_firebase_config');
                 let configToUse = null;
-                if (userConfigStr) { try { configToUse = JSON.parse(userConfigStr); } catch (e) {} } 
-                if (!configToUse && typeof __firebase_config !== 'undefined') {
+                // Only use environment config (no user manual input anymore)
+                if (typeof __firebase_config !== 'undefined') {
                     try { configToUse = JSON.parse(__firebase_config); } catch (e) {
                         if(typeof __firebase_config === 'object') configToUse = __firebase_config;
                     }
                 }
+                
                 if (configToUse && Object.keys(configToUse).length > 0) {
                     try {
                         const app = initializeApp(configToUse);
                         state.auth = getAuth(app);
                         state.db = getFirestore(app);
                         state.isOffline = false;
-                        updateConnectionStatus(true);
+                        
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(state.auth, __initial_auth_token);
                         } else {
                             await signInAnonymously(state.auth);
                         }
+                        
                         onAuthStateChanged(state.auth, (user) => {
                             if (user) {
                                 state.user = user;
                                 DataAdapter.startListeners();
                             }
                         });
-                    } catch (e) { console.error("Firebase fail", e); DataAdapter.goOffline(); }
-                } else { DataAdapter.goOffline(); }
+                    } catch (e) { 
+                        console.error("Firebase fail", e); 
+                        DataAdapter.goOffline(); 
+                    }
+                } else { 
+                    DataAdapter.goOffline(); 
+                }
             },
             goOffline: () => {
                 state.isOffline = true;
                 state.user = { uid: 'offline-user' };
-                updateConnectionStatus(false);
                 setTimeout(() => { DataAdapter.startListeners(); }, 500);
             },
             startListeners: () => {
@@ -419,18 +298,6 @@
         };
 
         // --- HELPER FUNCTIONS ---
-        function updateConnectionStatus(isOnline) {
-            const el = document.getElementById('connection-status');
-            if (!el) return;
-            if (isOnline) {
-                el.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-400"></div> Cloud Online';
-                el.className = "mb-2 px-2 py-1 rounded bg-black/20 text-white flex items-center justify-center gap-1 text-xs";
-            } else {
-                el.innerHTML = '<div class="w-2 h-2 rounded-full bg-yellow-400"></div> Mode Lokal';
-                el.className = "mb-2 px-2 py-1 rounded bg-black/20 text-white flex items-center justify-center gap-1 text-xs";
-            }
-        }
-
         function finishLoading() {
             document.getElementById('loading-screen').classList.add('hidden');
             document.getElementById('app-container').classList.remove('hidden');
@@ -446,9 +313,6 @@
 
         function renderGenderToggle() {
             const isPutri = state.genderFilter === 'P';
-            const bgColor = isPutri ? 'bg-pink-600' : 'bg-blue-600';
-            const icon = isPutri ? '<i data-lucide="user" class="w-4 h-4"></i>' : '<i data-lucide="user" class="w-4 h-4"></i>';
-            const text = isPutri ? 'Putri' : 'Putra';
             
             // Render Desktop Toggle
             const desktopContainer = document.getElementById('gender-toggle-desktop');
@@ -494,7 +358,7 @@
         function renderApp() {
             if (!state.user && !state.isOffline) return; 
             updateNavUI();
-            renderGenderToggle(); // Render toggle first
+            renderGenderToggle(); 
             
             const content = document.getElementById('content-area');
             content.innerHTML = '';
@@ -548,15 +412,12 @@
         // 1. DASHBOARD
         function renderDashboard(container) {
             const today = new Date().toISOString().split('T')[0];
-            // Filter attendance records to count only selected gender
             const filteredSantri = state.santriList.filter(s => s.gender === state.genderFilter);
             const filteredIds = filteredSantri.map(s => s.id);
-            
             const todaySessions = state.attendanceRecords.filter(r => r.date === today);
             
             let totalPresent = 0, totalEntries = 0;
             todaySessions.forEach(session => {
-                // Only count status for currently selected gender
                 Object.entries(session.data).forEach(([id, status]) => {
                     if (filteredIds.includes(id)) {
                         if (status === 'H') totalPresent++;
@@ -566,7 +427,6 @@
             });
             const percentage = totalEntries > 0 ? Math.round((totalPresent / totalEntries) * 100) : 0;
             const isPutri = state.genderFilter === 'P';
-            const themeColor = isPutri ? 'pink' : 'blue';
 
             const html = `
                 <div class="space-y-6 fade-in">
@@ -579,7 +439,6 @@
                             <p class="text-white/80 text-sm md:text-base">
                                 Dashboard ${isPutri ? 'Putri' : 'Putra'} - ${state.schoolProfile?.namaPondok || 'Sistem Informasi Pesantren'}.
                             </p>
-                            ${state.isOffline ? '<div class="mt-3 bg-black/20 border border-white/10 p-2 rounded text-xs text-white/90 flex items-start gap-2"><i data-lucide="wifi-off" class="w-4 h-4 mt-0.5 flex-shrink-0"></i> <span>Mode Offline (Lokal)</span></div>' : '<div class="mt-3 bg-black/20 border border-white/10 p-2 rounded text-xs text-white/90 flex items-center gap-2"><i data-lucide="cloud" class="w-4 h-4"></i> <span>Data Cloud Online</span></div>'}
                         </div>
                     </div>
 
@@ -629,8 +488,6 @@
         function renderSantriManager(container) {
             const isPutri = state.genderFilter === 'P';
             const themeBtn = isPutri ? 'bg-pink-600 hover:bg-pink-700' : 'bg-blue-600 hover:bg-blue-700';
-            
-            // Filter list based on toggle
             const displayList = state.santriList.filter(s => s.gender === state.genderFilter);
 
             window.toggleAddSantri = () => {
@@ -645,13 +502,11 @@
                 const nama = document.getElementById('s-nama').value;
                 const kelas = document.getElementById('s-kelas').value;
                 const kamar = document.getElementById('s-kamar').value;
-                // Gender defaults to current filter for convenience, or user selection
                 const gender = document.getElementById('s-gender').value;
                 
                 try {
                     await DataAdapter.saveSantri({ nama, kelas, kamar, gender });
                     document.getElementById('santri-form-el').reset();
-                    // Reset selector to current filter
                     document.getElementById('s-gender').value = state.genderFilter;
                     toggleAddSantri();
                 } catch (err) { alert("Gagal menambah santri"); }
@@ -749,13 +604,11 @@
         function renderAttendanceInput(container) {
             const currentSessionId = `${state.absensiForm.date}_${state.absensiForm.activity.replace(/\s+/g, '_')}`;
             const isPutri = state.genderFilter === 'P';
-            const themeColor = isPutri ? 'pink' : 'blue';
             const themeBorder = isPutri ? 'border-pink-200' : 'border-blue-200';
             const themeBg = isPutri ? 'bg-pink-50' : 'bg-blue-50';
             const themeText = isPutri ? 'text-pink-800' : 'text-blue-800';
             const themeBtn = isPutri ? 'bg-pink-600 hover:bg-pink-700' : 'bg-blue-600 hover:bg-blue-700';
 
-            // Filter students
             const displayList = state.santriList.filter(s => s.gender === state.genderFilter);
 
             if (state.absensiForm.loadedId !== currentSessionId) {
@@ -764,7 +617,6 @@
                 
                 if (existing) {
                     currentData = { ...existing.data };
-                    // Check logic for new students only for valid list
                     state.santriList.forEach(s => {
                         if (currentData[s.id] === undefined) {
                             currentData[s.id] = 'H';
@@ -801,13 +653,12 @@
                         data: state.absensiForm.data
                     });
                     state.absensiForm.isSaved = true;
-                    // Update cache
                     const existingIdx = state.attendanceRecords.findIndex(r => r.id === id);
                     const newRecord = { id, date: state.absensiForm.date, activity: state.absensiForm.activity, data: state.absensiForm.data };
                     if (existingIdx >= 0) state.attendanceRecords[existingIdx] = newRecord;
                     else state.attendanceRecords.push(newRecord);
 
-                    renderAttendanceInput(container); // Re-render to show success state
+                    renderAttendanceInput(container);
                 } catch (e) { alert("Gagal menyimpan: " + e.message); }
             };
 
@@ -897,8 +748,6 @@
         function renderReports(container) {
             window.setReportDate = (val) => { state.laporanDate = val; renderReports(container); };
             const records = state.attendanceRecords.filter(r => r.date === state.laporanDate);
-            
-            // Filter counts based on active gender
             const activeSantri = state.santriList.filter(s => s.gender === state.genderFilter);
             const activeIds = activeSantri.map(s => s.id);
 
@@ -928,10 +777,8 @@
                         ${records.length === 0 ? '<div class="p-8 text-center text-gray-500 italic">Tidak ada data absensi untuk tanggal ini.</div>' : `
                         <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="bg-gray-50 border-b"><th class="px-4 py-3 font-semibold text-gray-600">Kegiatan</th><th class="px-4 py-3 font-semibold text-gray-600">Total</th><th class="px-4 py-3 font-semibold text-emerald-600">Hadir</th><th class="px-4 py-3 font-semibold text-red-600">Tidak Hadir</th><th class="px-4 py-3 font-semibold text-gray-600">Ketidakhadiran</th></tr></thead>
                         <tbody class="divide-y divide-gray-100">${records.map(r => {
-                            // Calc stats per session restricted to gender
                             let sesH=0, sesTotal=0;
                             let absenteesHTML = [];
-                            
                             Object.entries(r.data).forEach(([id, st]) => {
                                 if(activeIds.includes(id)) {
                                     sesTotal++;
@@ -942,10 +789,8 @@
                                     }
                                 }
                             });
-                            
                             const sesAbsen = sesTotal - sesH;
                             const absenteeStr = absenteesHTML.map(h => `<div class="flex items-center gap-1 mb-1">${h}</div>`).join('') || '-';
-
                             return `<tr class="hover:bg-gray-50"><td class="px-4 py-3 font-medium">${r.activity}</td><td class="px-4 py-3">${sesTotal}</td><td class="px-4 py-3 text-emerald-600 font-bold">${sesH}</td><td class="px-4 py-3 text-red-600 font-bold">${sesAbsen}</td><td class="px-4 py-3 text-gray-500 text-xs">${absenteeStr}</td></tr>`;
                         }).join('')}</tbody></table></div>`}
                     </div>
@@ -953,22 +798,10 @@
             container.innerHTML = html;
         }
 
-        // 5. PROFILE (UNCHANGED, JUST RENDER)
+        // 5. PROFILE (Simplified)
         function renderProfileSettings(container) {
             window.updateProfileForm = (field, val) => { state.profileForm[field] = val; };
-            // ... (keep existing functions: saveDriveConfig, loginDrive, etc.) ...
-            window.saveDriveConfig = () => {
-                const clientId = document.getElementById('gd-client-id').value;
-                const apiKey = document.getElementById('gd-api-key').value;
-                if(!clientId || !apiKey) return alert("Client ID dan API Key tidak boleh kosong!");
-                state.gDrive.config = { clientId, apiKey };
-                localStorage.setItem('gdrive_config', JSON.stringify(state.gDrive.config));
-                alert("Konfigurasi Drive tersimpan!");
-                GDriveAdapter.loadGapi();
-            };
-            window.loginDrive = () => { GDriveAdapter.login(); };
-            window.backupToDrive = () => { GDriveAdapter.saveToDrive(); };
-            window.restoreFromDrive = () => { GDriveAdapter.loadFromDrive(); };
+            
             window.saveProfile = async (e) => {
                 e.preventDefault();
                 const btn = document.getElementById('save-profile-btn');
@@ -983,7 +816,7 @@
 
             const html = `
                 <div class="max-w-2xl mx-auto space-y-6 fade-in pb-12">
-                    <div><h2 class="text-2xl font-bold text-gray-800">Profil & Database</h2><p class="text-gray-500">Atur identitas lembaga dan koneksi server.</p></div>
+                    <div><h2 class="text-2xl font-bold text-gray-800">Profil Pondok Pesantren</h2><p class="text-gray-500">Atur identitas lembaga.</p></div>
                     <form onsubmit="saveProfile(event)" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-4">
                         <div><label class="block text-sm font-semibold text-gray-700 mb-1">Nama Pondok</label><input type="text" value="${state.profileForm.namaPondok || ''}" onchange="updateProfileForm('namaPondok', this.value)" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
                         <div><label class="block text-sm font-semibold text-gray-700 mb-1">Pengasuh</label><input type="text" value="${state.profileForm.pengasuh || ''}" onchange="updateProfileForm('pengasuh', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
@@ -991,96 +824,9 @@
                          <div><label class="block text-sm font-semibold text-gray-700 mb-1">Kontak</label><input type="text" value="${state.profileForm.kontak || ''}" onchange="updateProfileForm('kontak', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
                         <div class="pt-4"><button type="submit" id="save-profile-btn" class="w-full bg-emerald-600 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i data-lucide="save" class="w-4 h-4"></i> Simpan Profil</button></div>
                     </form>
-                    <!-- GOOGLE DRIVE SECTION -->
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-100">
-                        <div class="flex items-center gap-2 mb-2">
-                             <div class="bg-blue-100 p-2 rounded-full"><i data-lucide="hard-drive" class="text-blue-600 w-5 h-5"></i></div>
-                             <h3 class="text-lg font-bold text-gray-800">Google Drive Backup</h3>
-                        </div>
-                        <p class="text-sm text-gray-600 mb-4">Simpan backup data ke Google Drive Anda (iyaanend2@gmail.com).</p>
-                        <div class="hidden">
-                            <input type="text" id="gd-client-id" value="${state.gDrive.config.clientId || ''}">
-                            <input type="text" id="gd-api-key" value="${state.gDrive.config.apiKey || ''}">
-                        </div>
-                        <div class="flex flex-col md:flex-row gap-3 items-center border-t border-gray-100 pt-4">
-                            ${state.gDrive.connected ? '' : `
-                            <button onclick="loginDrive()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition w-full md:w-auto justify-center"><i data-lucide="log-in" class="w-4 h-4"></i> Login Google</button>`}
-                            <span id="gd-status" class="text-xs text-gray-500">${state.gDrive.connected ? '<span class="text-green-600 font-bold">Terhubung ke Google</span>' : 'Belum Login'}</span>
-                        </div>
-                        ${state.gDrive.connected ? `
-                        <div class="grid grid-cols-2 gap-4 mt-4 animate-in fade-in">
-                            <button onclick="backupToDrive()" class="flex flex-col items-center justify-center p-3 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100 transition text-blue-800"><i data-lucide="upload-cloud" class="w-6 h-6 mb-1"></i><span class="text-xs font-bold">Backup ke Drive</span></button>
-                            <button onclick="restoreFromDrive()" class="flex flex-col items-center justify-center p-3 border border-orange-200 bg-orange-50 rounded-lg hover:bg-orange-100 transition text-orange-800"><i data-lucide="download-cloud" class="w-6 h-6 mb-1"></i><span class="text-xs font-bold">Restore dari Drive</span></button>
-                        </div>` : ''}
-                    </div>
                 </div>`;
             container.innerHTML = html;
         }
     </script>
-<button id="btn-connect-drive" onclick="handleAuthClick()" style="display:block; margin: 20px auto; padding: 10px 20px; background-color: #4285F4; color: white; border: none; border-radius: 5px; cursor: pointer;">
-    Sambungkan ke Google Drive
-</button>
-
-<script>
-    // --- ISI KODE RAHASIA DISINI ---
-    const CLIENT_ID = '133835424632-crnnjf5mhr3g2bl4fsqvh13hld6h92gc.apps.googleusercontent.com';
-    const API_KEY = 'AIzaSyDySWvaM7P-P3-kmDGNnUCt2TmZQ1XKg8AI';
-    // -------------------------------
-
-    // Konfigurasi (Jangan Diubah)
-    const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
-    const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-
-    let tokenClient;
-    let gapiInited = false;
-    let gisInited = false;
-
-    // Fungsi saat Script Google Selesai Dimuat
-    function gapiLoaded() {
-        gapi.load('client', intializeGapiClient);
-    }
-
-    async function intializeGapiClient() {
-        await gapi.client.init({
-            apiKey: API_KEY,
-            discoveryDocs: [DISCOVERY_DOC],
-        });
-        gapiInited = true;
-    }
-
-    function gisLoaded() {
-        tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
-            scope: SCOPES,
-            callback: '', // Didefinisikan nanti saat klik tombol
-        });
-        gisInited = true;
-    }
-
-    // Fungsi Saat Tombol Ditekan
-    function handleAuthClick() {
-        if (!gapiInited || !gisInited) {
-            alert("Sabar, Google sedang loading...");
-            return;
-        }
-
-        tokenClient.callback = async (resp) => {
-            if (resp.error !== undefined) {
-                throw (resp);
-            }
-            // BERHASIL LOGIN!
-            alert("HORE! Berhasil tersambung ke Google Drive milikmu!");
-            document.getElementById("btn-connect-drive").innerText = "Sudah Terhubung ✅";
-        };
-
-        if (gapi.client.getToken() === null) {
-            tokenClient.requestAccessToken({prompt: 'consent'});
-        } else {
-            tokenClient.requestAccessToken({prompt: ''});
-        }
-    }
-</script>
- <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
-<script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 </body>
 </html>

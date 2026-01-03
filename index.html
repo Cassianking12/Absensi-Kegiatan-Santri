@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIAP - Sistem Absensi Pesantren</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Scrollbar custom */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #10b981; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #059669; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 overflow-hidden h-screen flex">
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 bg-emerald-50 z-50 flex items-center justify-center flex-col transition-opacity duration-500">
+        <div class="animate-spin mb-4 w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full"></div>
+        <p id="loading-text" class="text-emerald-800 font-semibold text-lg">Memuat Sistem Pesantren...</p>
+    </div>
+
+    <!-- App Container (Hidden initially) -->
+    <div id="app-container" class="hidden flex-1 flex h-full w-full">
+        
+        <!-- Sidebar (Desktop) -->
+        <aside class="w-64 bg-emerald-900 text-white flex-shrink-0 hidden md:flex flex-col shadow-xl z-10">
+            <div class="p-6 border-b border-emerald-800 flex items-center gap-3">
+                <div class="bg-emerald-100 p-2 rounded-lg text-emerald-800">
+                    <i data-lucide="moon" class="w-6 h-6"></i>
+                </div>
+                <div class="overflow-hidden">
+                    <h1 id="sidebar-title" class="font-bold text-lg leading-tight truncate">SIAP</h1>
+                    <p id="sidebar-subtitle" class="text-xs text-emerald-300 truncate">Sistem Absensi Pesantren</p>
+                </div>
+            </div>
+            
+            <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+                <button onclick="navigateTo('dashboard')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-emerald-100 hover:bg-emerald-800/50 hover:text-white" data-tab="dashboard">
+                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i> <span class="font-medium">Dashboard</span>
+                </button>
+                <button onclick="navigateTo('santri')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-emerald-100 hover:bg-emerald-800/50 hover:text-white" data-tab="santri">
+                    <i data-lucide="users" class="w-5 h-5"></i> <span class="font-medium">Data Santri</span>
+                </button>
+                <button onclick="navigateTo('absensi')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-emerald-100 hover:bg-emerald-800/50 hover:text-white" data-tab="absensi">
+                    <i data-lucide="calendar-check" class="w-5 h-5"></i> <span class="font-medium">Input Absensi</span>
+                </button>
+                <button onclick="navigateTo('laporan')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-emerald-100 hover:bg-emerald-800/50 hover:text-white" data-tab="laporan">
+                    <i data-lucide="clipboard-list" class="w-5 h-5"></i> <span class="font-medium">Laporan</span>
+                </button>
+                
+                <div class="pt-4 mt-4 border-t border-emerald-800">
+                    <button onclick="navigateTo('profil')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-emerald-100 hover:bg-emerald-800/50 hover:text-white" data-tab="profil">
+                        <i data-lucide="settings" class="w-5 h-5"></i> <span class="font-medium">Profil Pondok</span>
+                    </button>
+                </div>
+            </nav>
+            
+            <div class="p-4 border-t border-emerald-800 text-xs text-emerald-400 text-center">
+                <div id="connection-status" class="mb-2 px-2 py-1 rounded bg-emerald-800 text-emerald-200 flex items-center justify-center gap-1">
+                    <div class="w-2 h-2 rounded-full bg-green-400"></div> Online
+                </div>
+                &copy; 2024 <span id="footer-school-name">Pondok Pesantren</span>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-auto bg-gray-50 relative w-full flex flex-col">
+            <!-- Mobile Header -->
+            <header class="bg-white shadow-sm p-4 sticky top-0 z-20 md:hidden flex items-center gap-3">
+                <div class="bg-emerald-600 p-1.5 rounded text-white">
+                    <i data-lucide="moon" class="w-5 h-5"></i>
+                </div>
+                <h1 id="mobile-title" class="font-bold text-emerald-800 truncate">SIAP Pesantren</h1>
+            </header>
+
+            <!-- Content Container -->
+            <div id="content-area" class="p-4 md:p-8 pb-24 md:pb-8 max-w-6xl mx-auto w-full fade-in">
+                <!-- Content injected via JS -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div id="mobile-nav" class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-2 z-50 shadow-lg hidden">
+        <button onclick="navigateTo('dashboard')" class="mobile-nav-item flex flex-col items-center justify-center w-full py-1 text-gray-400" data-tab="dashboard">
+            <div class="mb-1 icon-container"><i data-lucide="layout-dashboard" class="w-5 h-5"></i></div>
+            <span class="text-[10px] font-medium">Home</span>
+        </button>
+        <button onclick="navigateTo('absensi')" class="mobile-nav-item flex flex-col items-center justify-center w-full py-1 text-gray-400" data-tab="absensi">
+            <div class="mb-1 icon-container"><i data-lucide="calendar-check" class="w-5 h-5"></i></div>
+            <span class="text-[10px] font-medium">Absen</span>
+        </button>
+        <button onclick="navigateTo('laporan')" class="mobile-nav-item flex flex-col items-center justify-center w-full py-1 text-gray-400" data-tab="laporan">
+            <div class="mb-1 icon-container"><i data-lucide="clipboard-list" class="w-5 h-5"></i></div>
+            <span class="text-[10px] font-medium">Lapor</span>
+        </button>
+        <button onclick="navigateTo('profil')" class="mobile-nav-item flex flex-col items-center justify-center w-full py-1 text-gray-400" data-tab="profil">
+            <div class="mb-1 icon-container"><i data-lucide="settings" class="w-5 h-5"></i></div>
+            <span class="text-[10px] font-medium">Profil</span>
+        </button>
+    </div>
+
+    <!-- Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // --- GLOBAL STATE & CONFIG ---
+        let state = {
+            user: null,
+            activeTab: 'dashboard',
+            santriList: [],
+            attendanceRecords: [],
+            schoolProfile: null,
+            newSantri: { nama: '', kelas: '', kamar: '' },
+            absensiForm: {
+                date: new Date().toISOString().split('T')[0],
+                activity: 'Subuh Berjamaah',
+                data: {},
+                isSaved: false
+            },
+            laporanDate: new Date().toISOString().split('T')[0],
+            profileForm: { namaPondok: '', pengasuh: '', alamat: '', kontak: '' },
+            isOffline: false
+        };
+
+        const activities = [
+            'Subuh Berjamaah', 'Dhuha & Ngaji Pagi', 'Sekolah Formal', 
+            'Ashar Berjamaah', 'Ngaji Sore', 'Maghrib Berjamaah', 
+            'Isya & Taklim', 'Tahajud'
+        ];
+
+        // --- DATA ADAPTER (The Magic Part) ---
+        // This allows the app to switch between Firebase and LocalStorage automatically
+        const DataAdapter = {
+            init: async () => {
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const hasConfig = Object.keys(firebaseConfig).length > 0;
+                
+                if (hasConfig) {
+                    try {
+                        const app = initializeApp(firebaseConfig);
+                        state.auth = getAuth(app);
+                        state.db = getFirestore(app);
+                        state.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                        state.isOffline = false;
+                        
+                        // Auth Logic
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(state.auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(state.auth);
+                        }
+                        
+                        onAuthStateChanged(state.auth, (user) => {
+                            if (user) {
+                                state.user = user;
+                                DataAdapter.startListeners();
+                            }
+                        });
+                    } catch (e) {
+                        console.error("Firebase init failed, switching to offline:", e);
+                        DataAdapter.goOffline();
+                    }
+                } else {
+                    console.warn("No Firebase Config found. Starting in LocalStorage mode.");
+                    DataAdapter.goOffline();
+                }
+            },
+
+            goOffline: () => {
+                state.isOffline = true;
+                state.user = { uid: 'offline-user' };
+                // Update UI for offline mode
+                const statusEl = document.getElementById('connection-status');
+                if(statusEl) statusEl.innerHTML = '<div class="w-2 h-2 rounded-full bg-yellow-400"></div> Penyimpanan Lokal';
+                
+                const loadingText = document.getElementById('loading-text');
+                if(loadingText) loadingText.innerText = "Mode Penyimpanan Lokal...";
+
+                setTimeout(() => {
+                    DataAdapter.startListeners();
+                }, 500); // Fake delay for UX
+            },
+
+            startListeners: () => {
+                if (state.isOffline) {
+                    // MOCK LISTENERS for LocalStorage
+                    const loadLocal = () => {
+                        const santriRaw = localStorage.getItem('siap_santri') || '[]';
+                        const absensiRaw = localStorage.getItem('siap_absensi') || '[]';
+                        const profileRaw = localStorage.getItem('siap_profile');
+                        
+                        state.santriList = JSON.parse(santriRaw).sort((a, b) => a.nama.localeCompare(b.nama));
+                        state.attendanceRecords = JSON.parse(absensiRaw);
+                        if(profileRaw) state.schoolProfile = JSON.parse(profileRaw);
+                        
+                        renderApp();
+                        document.getElementById('loading-screen').classList.add('hidden');
+                        document.getElementById('app-container').classList.remove('hidden');
+                        document.getElementById('mobile-nav').classList.remove('hidden');
+                    };
+                    loadLocal();
+                    // Listen for changes in other tabs
+                    window.addEventListener('storage', loadLocal);
+                } else {
+                    // FIREBASE LISTENERS
+                    const uid = state.user.uid;
+                    const appId = state.appId;
+                    
+                    onSnapshot(collection(state.db, 'artifacts', appId, 'users', uid, 'santri'), (snap) => {
+                        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        state.santriList = data.sort((a, b) => a.nama.localeCompare(b.nama));
+                        renderApp();
+                    });
+
+                    onSnapshot(collection(state.db, 'artifacts', appId, 'users', uid, 'absensi'), (snap) => {
+                        state.attendanceRecords = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        renderApp();
+                    });
+
+                    onSnapshot(doc(state.db, 'artifacts', appId, 'users', uid, 'settings', 'profile'), (snap) => {
+                        if (snap.exists()) {
+                            state.schoolProfile = snap.data();
+                            state.profileForm = { ...snap.data() };
+                            updateGlobalUI();
+                        }
+                        document.getElementById('loading-screen').classList.add('hidden');
+                        document.getElementById('app-container').classList.remove('hidden');
+                        document.getElementById('mobile-nav').classList.remove('hidden');
+                        renderApp();
+                    });
+                }
+            },
+
+            saveSantri: async (data) => {
+                if (state.isOffline) {
+                    const newId = 's_' + Date.now();
+                    const newEntry = { id: newId, ...data, createdAt: new Date().toISOString() };
+                    const list = JSON.parse(localStorage.getItem('siap_santri') || '[]');
+                    list.push(newEntry);
+                    localStorage.setItem('siap_santri', JSON.stringify(list));
+                    DataAdapter.startListeners(); // Refresh
+                } else {
+                    await setDoc(doc(collection(state.db, 'artifacts', state.appId, 'users', state.user.uid, 'santri')), {
+                        ...data, createdAt: serverTimestamp()
+                    });
+                }
+            },
+
+            deleteSantri: async (id) => {
+                if (state.isOffline) {
+                    let list = JSON.parse(localStorage.getItem('siap_santri') || '[]');
+                    list = list.filter(s => s.id !== id);
+                    localStorage.setItem('siap_santri', JSON.stringify(list));
+                    DataAdapter.startListeners();
+                } else {
+                    await deleteDoc(doc(state.db, 'artifacts', state.appId, 'users', state.user.uid, 'santri', id));
+                }
+            },
+
+            saveAbsensi: async (id, data) => {
+                if (state.isOffline) {
+                    let list = JSON.parse(localStorage.getItem('siap_absensi') || '[]');
+                    const idx = list.findIndex(r => r.id === id);
+                    const record = { id, ...data, updatedAt: new Date().toISOString() };
+                    if (idx >= 0) list[idx] = record;
+                    else list.push(record);
+                    localStorage.setItem('siap_absensi', JSON.stringify(list));
+                    DataAdapter.startListeners();
+                } else {
+                    await setDoc(doc(state.db, 'artifacts', state.appId, 'users', state.user.uid, 'absensi', id), {
+                        ...data, updatedAt: serverTimestamp()
+                    });
+                }
+            },
+
+            saveProfile: async (data) => {
+                if (state.isOffline) {
+                    localStorage.setItem('siap_profile', JSON.stringify(data));
+                    state.schoolProfile = data;
+                    updateGlobalUI();
+                    DataAdapter.startListeners();
+                } else {
+                    await setDoc(doc(state.db, 'artifacts', state.appId, 'users', state.user.uid, 'settings', 'profile'), {
+                        ...data, updatedAt: serverTimestamp()
+                    });
+                }
+            }
+        };
+
+        // --- INIT APP ---
+        DataAdapter.init();
+
+        // --- NAVIGATION ---
+        window.navigateTo = (tabName) => {
+            state.activeTab = tabName;
+            renderApp();
+        };
+
+        // --- RENDER LOGIC ---
+        function renderApp() {
+            if (!state.user) return; // Wait for auth/offline user
+            updateNavUI();
+            const content = document.getElementById('content-area');
+            content.innerHTML = '';
+            
+            switch(state.activeTab) {
+                case 'dashboard': renderDashboard(content); break;
+                case 'santri': renderSantriManager(content); break;
+                case 'absensi': renderAttendanceInput(content); break;
+                case 'laporan': renderReports(content); break;
+                case 'profil': renderProfileSettings(content); break;
+            }
+            lucide.createIcons();
+        }
+
+        function updateNavUI() {
+            document.querySelectorAll('.nav-item').forEach(el => {
+                const isActive = el.dataset.tab === state.activeTab;
+                el.className = `nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive ? 'bg-emerald-800 text-white shadow-md' : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'}`;
+            });
+            document.querySelectorAll('.mobile-nav-item').forEach(el => {
+                const isActive = el.dataset.tab === state.activeTab;
+                el.className = `mobile-nav-item flex flex-col items-center justify-center w-full py-1 ${isActive ? 'text-emerald-600' : 'text-gray-400'}`;
+                const iconContainer = el.querySelector('.icon-container');
+                iconContainer.className = `mb-1 icon-container ${isActive ? 'bg-emerald-100 p-1 rounded-full' : ''}`;
+            });
+        }
+
+        function updateGlobalUI() {
+            const name = state.schoolProfile?.namaPondok || 'SIAP';
+            const sub = state.schoolProfile?.namaPondok ? 'Sistem Informasi' : 'Sistem Absensi Pesantren';
+            document.getElementById('sidebar-title').innerText = name;
+            document.getElementById('mobile-title').innerText = name;
+            document.getElementById('sidebar-subtitle').innerText = sub;
+            document.getElementById('footer-school-name').innerText = state.schoolProfile?.namaPondok || 'Pondok Pesantren';
+        }
+
+        // 1. DASHBOARD
+        function renderDashboard(container) {
+            const today = new Date().toISOString().split('T')[0];
+            const todaySessions = state.attendanceRecords.filter(r => r.date === today);
+            
+            let totalPresent = 0;
+            let totalEntries = 0;
+            todaySessions.forEach(session => {
+                Object.values(session.data).forEach(status => {
+                    if (status === 'H') totalPresent++;
+                    totalEntries++;
+                });
+            });
+            const percentage = totalEntries > 0 ? Math.round((totalPresent / totalEntries) * 100) : 0;
+
+            const html = `
+                <div class="space-y-6 fade-in">
+                    <div class="bg-emerald-800 text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
+                        <div class="absolute right-0 top-0 opacity-10 transform translate-x-10 -translate-y-5">
+                            <i data-lucide="moon" class="w-40 h-40"></i>
+                        </div>
+                        <div class="relative z-10">
+                            <h2 class="text-2xl font-bold mb-1">Ahlan wa Sahlan, Ustadz.</h2>
+                            <p class="text-emerald-100 text-sm md:text-base">
+                                Selamat datang di Dashboard ${state.schoolProfile?.namaPondok || 'Sistem Informasi Pesantren'}.
+                            </p>
+                            ${state.isOffline ? '<p class="mt-2 text-yellow-300 text-xs bg-yellow-900/50 inline-block px-2 py-1 rounded">⚠️ Mode Penyimpanan Lokal (Data hanya tersimpan di browser ini)</p>' : ''}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        ${renderStatCard('Total Santri', state.santriList.length, 'users', 'bg-blue-50 text-blue-500')}
+                        ${renderStatCard('Kegiatan Hari Ini', todaySessions.length, 'clock', 'bg-orange-50 text-orange-500')}
+                        ${renderStatCard('Kehadiran Hari Ini', percentage + '%', 'check-circle', 'bg-emerald-50 text-emerald-500', 'Rata-rata kehadiran')}
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h3 class="font-semibold text-lg mb-4 flex items-center gap-2">
+                            <i data-lucide="book-open" class="text-emerald-600 w-5 h-5"></i>
+                            Kegiatan Terakhir Dicatat
+                        </h3>
+                        ${state.attendanceRecords.length === 0 
+                            ? '<p class="text-gray-400 italic text-sm">Belum ada data absensi.</p>' 
+                            : `<div class="space-y-3">
+                                ${state.attendanceRecords.slice(-5).reverse().map(record => `
+                                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                        <div class="flex items-center gap-3">
+                                            <div class="bg-emerald-100 p-2 rounded-full text-emerald-700">
+                                                <i data-lucide="calendar-check" class="w-4 h-4"></i>
+                                            </div>
+                                            <div>
+                                                <p class="font-medium text-gray-800 capitalize">${record.activity}</p>
+                                                <p class="text-xs text-gray-500">${new Date(record.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                                            </div>
+                                        </div>
+                                        <span class="text-xs font-semibold bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                                            ${Object.keys(record.data || {}).length} Santri
+                                        </span>
+                                    </div>
+                                `).join('')}
+                               </div>`
+                        }
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        function renderStatCard(title, value, icon, colorClass, desc = '') {
+            return `<div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-start justify-between">
+                <div><p class="text-sm font-medium text-gray-500 mb-1">${title}</p><h3 class="text-3xl font-bold text-gray-800">${value}</h3>${desc ? `<p class="text-xs text-gray-400 mt-1">${desc}</p>` : ''}</div>
+                <div class="p-3 rounded-lg ${colorClass}"><i data-lucide="${icon}" class="w-6 h-6"></i></div>
+            </div>`;
+        }
+
+        // 2. SANTRI MANAGER
+        function renderSantriManager(container) {
+            window.toggleAddSantri = () => {
+                const form = document.getElementById('add-santri-form');
+                form.classList.toggle('hidden');
+                document.getElementById('add-btn-text').innerText = form.classList.contains('hidden') ? 'Tambah Santri' : 'Batal';
+                lucide.createIcons();
+            };
+
+            window.submitSantri = async (e) => {
+                e.preventDefault();
+                const nama = document.getElementById('s-nama').value;
+                const kelas = document.getElementById('s-kelas').value;
+                const kamar = document.getElementById('s-kamar').value;
+                try {
+                    await DataAdapter.saveSantri({ nama, kelas, kamar });
+                    document.getElementById('santri-form-el').reset();
+                    toggleAddSantri();
+                } catch (err) { alert("Gagal menambah santri"); }
+            };
+
+            window.deleteSantri = async (id) => {
+                if(confirm("Hapus data santri ini?")) {
+                    try { await DataAdapter.deleteSantri(id); } catch(err) { alert("Gagal menghapus"); }
+                }
+            };
+
+            const html = `
+                <div class="space-y-6 fade-in">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div><h2 class="text-2xl font-bold text-gray-800">Data Santri</h2><p class="text-gray-500">Kelola daftar santri aktif.</p></div>
+                        <button onclick="toggleAddSantri()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition shadow-sm w-full md:w-auto justify-center"><i data-lucide="plus-circle" class="w-5 h-5"></i><span id="add-btn-text">Tambah Santri</span></button>
+                    </div>
+                    <div id="add-santri-form" class="hidden bg-white p-6 rounded-xl shadow-md border border-emerald-100">
+                        <h3 class="font-semibold mb-4 text-emerald-800">Form Santri Baru</h3>
+                        <form id="santri-form-el" onsubmit="submitSantri(event)">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                <div><label class="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label><input type="text" id="s-nama" required placeholder="Contoh: Ahmad Fulan" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                                <div><label class="block text-sm font-medium text-gray-700 mb-1">Kelas</label><input type="text" id="s-kelas" placeholder="Contoh: 1 Wustho" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                                <div><label class="block text-sm font-medium text-gray-700 mb-1">Kamar</label><input type="text" id="s-kamar" placeholder="Abu Bakar 01" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                            </div>
+                            <div class="flex justify-end"><button type="submit" class="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 font-medium">Simpan Data</button></div>
+                        </form>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-50 border-b border-gray-200">
+                                    <tr><th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Nama</th><th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Kelas</th><th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Kamar</th><th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Aksi</th></tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    ${state.santriList.length === 0 ? '<tr><td colspan="4" class="px-6 py-8 text-center text-gray-500">Belum ada data santri.</td></tr>' : state.santriList.map(s => `
+                                        <tr class="hover:bg-gray-50 transition-colors">
+                                            <td class="px-6 py-4 font-medium text-gray-900">${s.nama}</td><td class="px-6 py-4 text-gray-600">${s.kelas}</td><td class="px-6 py-4 text-gray-600">${s.kamar}</td>
+                                            <td class="px-6 py-4 text-right"><button onclick="deleteSantri('${s.id}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>`;
+            container.innerHTML = html;
+        }
+
+        // 3. ATTENDANCE INPUT
+        function renderAttendanceInput(container) {
+            const loadAttendanceData = () => {
+                const id = `${state.absensiForm.date}_${state.absensiForm.activity.replace(/\s+/g, '_')}`;
+                const existing = state.attendanceRecords.find(r => r.id === id);
+                if (existing) {
+                    state.absensiForm.data = existing.data;
+                } else {
+                    const initial = {};
+                    state.santriList.forEach(s => initial[s.id] = 'H');
+                    state.absensiForm.data = initial;
+                }
+                state.absensiForm.isSaved = false;
+            };
+            loadAttendanceData();
+
+            window.updateAbsenField = (field, value) => {
+                state.absensiForm[field] = value;
+                loadAttendanceData();
+                renderAttendanceInput(container);
+            };
+
+            window.setStatus = (id, status) => {
+                state.absensiForm.data[id] = status;
+                state.absensiForm.isSaved = false;
+                renderAttendanceInput(container); // Re-render to update UI state properly
+            };
+
+            window.saveAbsensi = async () => {
+                if (state.santriList.length === 0) return;
+                const id = `${state.absensiForm.date}_${state.absensiForm.activity.replace(/\s+/g, '_')}`;
+                try {
+                    await DataAdapter.saveAbsensi(id, {
+                        date: state.absensiForm.date,
+                        activity: state.absensiForm.activity,
+                        data: state.absensiForm.data
+                    });
+                    state.absensiForm.isSaved = true;
+                    const btn = document.getElementById('save-absen-btn');
+                    btn.className = 'flex items-center gap-2 px-8 py-3 rounded-lg font-semibold shadow-md transition-all bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default';
+                    btn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i> Tersimpan';
+                    lucide.createIcons();
+                } catch (e) { alert("Gagal menyimpan: " + e.message); }
+            };
+
+            const getBtnClass = (santriId, val, currentVal, baseColor) => {
+                const isSelected = currentVal === val;
+                const colors = {
+                    emerald: isSelected ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                    yellow: isSelected ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-yellow-100 text-yellow-700 border-yellow-200',
+                    blue: isSelected ? 'bg-blue-500 text-white border-blue-500' : 'bg-blue-100 text-blue-700 border-blue-200',
+                    red: isSelected ? 'bg-red-500 text-white border-red-500' : 'bg-red-100 text-red-700 border-red-200'
+                };
+                return `w-10 h-10 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-full md:rounded-lg border text-sm font-medium transition-all duration-200 flex items-center justify-center ${colors[baseColor]} ${isSelected ? 'opacity-100 scale-105 shadow-sm' : 'hover:opacity-80 opacity-60'}`;
+            };
+
+            const html = `
+                <div class="space-y-6 fade-in">
+                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-emerald-100">
+                        <div class="flex flex-col md:flex-row gap-4 w-full">
+                           <div class="flex-1"><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tanggal</label><input type="date" value="${state.absensiForm.date}" onchange="updateAbsenField('date', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                           <div class="flex-1"><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Kegiatan</label><select onchange="updateAbsenField('activity', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none bg-white">${activities.map(a => `<option value="${a}" ${state.absensiForm.activity === a ? 'selected' : ''}>${a}</option>`).join('')}</select></div>
+                        </div>
+                     </div>
+                     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="p-4 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center"><h3 class="font-semibold text-emerald-800 flex items-center gap-2"><i data-lucide="users" class="w-4 h-4"></i> Daftar Absensi</h3><div class="text-xs text-emerald-600 font-medium bg-emerald-100 px-2 py-1 rounded">${state.santriList.length} Santri</div></div>
+                        <div class="max-h-[60vh] overflow-y-auto">
+                           <table class="w-full"><thead class="bg-gray-50 sticky top-0 z-10 shadow-sm"><tr><th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Nama</th><th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Status</th></tr></thead>
+                              <tbody class="divide-y divide-gray-100">
+                                ${state.santriList.length === 0 ? '<tr><td colspan="2" class="p-6 text-center text-gray-500">Belum ada data santri. Silakan tambah di menu Data Santri.</td></tr>' : 
+                                state.santriList.map(s => `
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-3"><p class="font-medium text-gray-900">${s.nama}</p><p class="text-xs text-gray-500">${s.kelas} - ${s.kamar}</p></td>
+                                        <td class="px-4 py-3"><div class="flex items-center justify-center gap-1 md:gap-4">
+                                            <button onclick="setStatus('${s.id}', 'H')" class="${getBtnClass(s.id, 'H', state.absensiForm.data[s.id], 'emerald')}"><span class="md:hidden">H</span><span class="hidden md:inline">Hadir</span></button>
+                                            <button onclick="setStatus('${s.id}', 'S')" class="${getBtnClass(s.id, 'S', state.absensiForm.data[s.id], 'yellow')}"><span class="md:hidden">S</span><span class="hidden md:inline">Sakit</span></button>
+                                            <button onclick="setStatus('${s.id}', 'I')" class="${getBtnClass(s.id, 'I', state.absensiForm.data[s.id], 'blue')}"><span class="md:hidden">I</span><span class="hidden md:inline">Izin</span></button>
+                                            <button onclick="setStatus('${s.id}', 'A')" class="${getBtnClass(s.id, 'A', state.absensiForm.data[s.id], 'red')}"><span class="md:hidden">A</span><span class="hidden md:inline">Alpha</span></button>
+                                        </div></td>
+                                    </tr>`).join('')}
+                              </tbody>
+                           </table>
+                        </div>
+                        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end sticky bottom-0">
+                            <button id="save-absen-btn" onclick="saveAbsensi()" class="${state.absensiForm.isSaved ? 'bg-emerald-100 text-emerald-700 cursor-default' : 'bg-emerald-600 text-white hover:bg-emerald-700'} flex items-center gap-2 px-8 py-3 rounded-lg font-semibold shadow-md transition-all">
+                                <i data-lucide="${state.absensiForm.isSaved ? 'check-circle' : 'save'}" class="w-5 h-5"></i> ${state.absensiForm.isSaved ? 'Tersimpan' : 'Simpan Absensi'}
+                            </button>
+                        </div>
+                     </div>
+                </div>`;
+            container.innerHTML = html;
+        }
+
+        // 4. REPORTS
+        function renderReports(container) {
+            window.setReportDate = (val) => { state.laporanDate = val; renderReports(container); };
+            const records = state.attendanceRecords.filter(r => r.date === state.laporanDate);
+            let s = 0, i = 0, a = 0, h = 0;
+            records.forEach(r => { Object.values(r.data).forEach(st => { if(st==='S')s++;else if(st==='I')i++;else if(st==='A')a++;else h++; }); });
+
+            const html = `
+                <div class="space-y-6 fade-in">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4">Laporan Harian</h2>
+                         <div class="w-full md:w-auto"><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Pilih Tanggal</label><input type="date" value="${state.laporanDate}" onchange="setReportDate(this.value)" class="p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="p-4 rounded-xl flex flex-col items-center justify-center bg-emerald-100 text-emerald-800"><span class="text-2xl font-bold">${h}</span><span class="text-xs font-semibold uppercase opacity-80">Hadir</span></div>
+                        <div class="p-4 rounded-xl flex flex-col items-center justify-center bg-yellow-100 text-yellow-800"><span class="text-2xl font-bold">${s}</span><span class="text-xs font-semibold uppercase opacity-80">Sakit</span></div>
+                        <div class="p-4 rounded-xl flex flex-col items-center justify-center bg-blue-100 text-blue-800"><span class="text-2xl font-bold">${i}</span><span class="text-xs font-semibold uppercase opacity-80">Izin</span></div>
+                        <div class="p-4 rounded-xl flex flex-col items-center justify-center bg-red-100 text-red-800"><span class="text-2xl font-bold">${a}</span><span class="text-xs font-semibold uppercase opacity-80">Alpha</span></div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="p-4 bg-gray-50 border-b border-gray-200"><h3 class="font-semibold text-gray-700">Detail Kegiatan per Sesi</h3></div>
+                        ${records.length === 0 ? '<div class="p-8 text-center text-gray-500 italic">Tidak ada data absensi.</div>' : `
+                        <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="bg-gray-50 border-b"><th class="px-4 py-3 font-semibold text-gray-600">Kegiatan</th><th class="px-4 py-3 font-semibold text-gray-600">Total</th><th class="px-4 py-3 font-semibold text-emerald-600">Hadir</th><th class="px-4 py-3 font-semibold text-red-600">Tidak Hadir</th><th class="px-4 py-3 font-semibold text-gray-600">Ketidakhadiran</th></tr></thead>
+                        <tbody class="divide-y divide-gray-100">${records.map(r => {
+                            const total = Object.keys(r.data).length; const hadir = Object.values(r.data).filter(v=>v==='H').length; const absen = total - hadir;
+                            const absentees = Object.entries(r.data).filter(([id, st])=>st!=='H').map(([id, st])=>{ const sa = state.santriList.find(sl=>sl.id===id); return sa ? `${sa.nama} (${st})` : ''; }).filter(Boolean).join(', ');
+                            return `<tr class="hover:bg-gray-50"><td class="px-4 py-3 font-medium">${r.activity}</td><td class="px-4 py-3">${total}</td><td class="px-4 py-3 text-emerald-600 font-bold">${hadir}</td><td class="px-4 py-3 text-red-600 font-bold">${absen}</td><td class="px-4 py-3 text-gray-500 text-xs">${absentees||'-'}</td></tr>`;
+                        }).join('')}</tbody></table></div>`}
+                    </div>
+                </div>`;
+            container.innerHTML = html;
+        }
+
+        // 5. PROFILE
+        function renderProfileSettings(container) {
+            window.updateProfileForm = (field, val) => { state.profileForm[field] = val; };
+            window.saveProfile = async (e) => {
+                e.preventDefault();
+                const btn = document.getElementById('save-profile-btn');
+                btn.innerText = 'Menyimpan...';
+                try {
+                    await DataAdapter.saveProfile(state.profileForm);
+                    alert("Profil berhasil diperbarui!");
+                } catch(err) { alert("Gagal menyimpan."); }
+                btn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> Simpan Profil';
+                lucide.createIcons();
+            };
+
+            const html = `
+                <div class="max-w-2xl mx-auto space-y-6 fade-in">
+                    <div><h2 class="text-2xl font-bold text-gray-800">Profil Pondok Pesantren</h2><p class="text-gray-500">Atur identitas lembaga.</p></div>
+                    <form onsubmit="saveProfile(event)" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-4">
+                        <div><label class="block text-sm font-semibold text-gray-700 mb-1">Nama Pondok</label><input type="text" value="${state.profileForm.namaPondok || ''}" onchange="updateProfileForm('namaPondok', this.value)" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-gray-700 mb-1">Pengasuh</label><input type="text" value="${state.profileForm.pengasuh || ''}" onchange="updateProfileForm('pengasuh', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-gray-700 mb-1">Alamat</label><textarea rows="3" onchange="updateProfileForm('alamat', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">${state.profileForm.alamat || ''}</textarea></div>
+                         <div><label class="block text-sm font-semibold text-gray-700 mb-1">Kontak</label><input type="text" value="${state.profileForm.kontak || ''}" onchange="updateProfileForm('kontak', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
+                        <div class="pt-4"><button type="submit" id="save-profile-btn" class="w-full bg-emerald-600 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i data-lucide="save" class="w-4 h-4"></i> Simpan Profil</button></div>
+                    </form>
+                </div>`;
+            container.innerHTML = html;
+        }
+
+    </script>
+</body>
+</html>

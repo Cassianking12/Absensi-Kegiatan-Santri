@@ -556,7 +556,7 @@
                                 </div>
                             </div>
                             <div class="flex justify-end">
-                                <button type="submit" class="${themeBtn} text-white px-6 py-2 rounded-lg font-medium">Simpan Data</button>
+                                <button type="button" id="btn-simpan-asli" onclick="simpanKeFirebase()" class="${themeBtn} text-white px-6 py-2 rounded-lg font-medium">Simpan Data</button>
                             </div>
                         </form>
                     </div>
@@ -828,18 +828,11 @@
             container.innerHTML = html;
         }
     </script>
-    <div style="text-align: center; margin-top: 20px;">
-    <button onclick="tesKoneksi()" style="background-color: #FFCA28; border: none; padding: 15px 30px; font-weight: bold; border-radius: 10px; cursor: pointer;">
-        🚀 TES KIRIM DATA KE FIREBASE
-    </button>
-</div>
-
-<script type="module">
-  // 1. Import Ramuan Firebase (Langsung dari Internet)
+    <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  // 2. Kunci Rahasia Kamu (Sudah saya isikan sesuai gambar)
+  // Konfigurasi Kamu (Tetap Sama)
   const firebaseConfig = {
     apiKey: "AIzaSyB-bbzttQt2-3HfycMFfUREjrjOopauU6I",
     authDomain: "absensi-kegiatan-santri.firebaseapp.com",
@@ -849,26 +842,49 @@
     appId: "1:364902117670:web:5108eb4e5ee3eb76db11e7"
   };
 
-  // 3. Mulai Firebase
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // 4. Fungsi Tes Simpan Data (Agar bisa dipanggil tombol HTML)
-  window.tesKoneksi = async function() {
-      alert("Sedang mencoba menghubungi Database...");
-      
+  // FUNGSI UTAMA: Simpan Absensi
+  window.simpanKeFirebase = async function() {
+      // 1. Coba ambil data dari variabel 'state' punya kamu
+      let dataForm;
       try {
-          // Mencoba menyimpan data sederhana
-          await addDoc(collection(db, "uji_coba"), {
-              pesan: "Halo Firebase! Ini tes dari Santri.",
-              jam: new Date().toString(),
-              status: "Sukses Besar"
+          dataForm = window.state.absensiForm; 
+      } catch (e) {
+          alert("Gagal membaca data form. Pastikan variabel 'state' bisa diakses.");
+          return;
+      }
+
+      // 2. Cek apakah data kosong?
+      if (!dataForm || !dataForm.date || !dataForm.activity) {
+          alert("⚠️ Mohon isi TANGGAL dan KEGIATAN dulu sebelum simpan!");
+          return;
+      }
+
+      // 3. Tampilkan Loading (Biar user tahu sedang proses)
+      const tombol = document.getElementById('btn-simpan-asli');
+      if(tombol) tombol.innerText = "⏳ Sedang Mengirim...";
+
+      try {
+          // 4. Kirim ke Firebase (Nama tabel: 'laporan_absensi')
+          await addDoc(collection(db, "laporan_absensi"), {
+              tanggal: dataForm.date,
+              kegiatan: dataForm.activity,
+              detail_kehadiran: dataForm.data, // Ini data H/S/I/A per anak
+              waktu_input: new Date().toString(),
+              penginput: "Admin/Ustadz"
           });
           
-          alert("✅ BERHASIL! Data sudah tersimpan di Firebase!");
+          alert("✅ ALHAMDULILLAH! Data Absensi Berhasil Disimpan!");
+          
+          // Kembalikan tulisan tombol
+          if(tombol) tombol.innerText = "Simpan Data";
+          
       } catch (error) {
-          alert("❌ Gagal: " + error.message);
+          alert("❌ Gagal simpan: " + error.message);
           console.error("Error detail:", error);
+          if(tombol) tombol.innerText = "Coba Lagi";
       }
   }
 </script>

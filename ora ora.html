@@ -828,5 +828,49 @@
             container.innerHTML = html;
         }
     </script>
+    <div style="text-align: center; margin-top: 20px;">
+    <button onclick="tesKoneksi()" style="background-color: #FFCA28; border: none; padding: 15px 30px; font-weight: bold; border-radius: 10px; cursor: pointer;">
+        🚀 TES KIRIM DATA KE FIREBASE
+    </button>
+</div>
+
+<script type="module">
+  // 1. Import Ramuan Firebase (Langsung dari Internet)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  // 2. Kunci Rahasia Kamu (Sudah saya isikan sesuai gambar)
+  const firebaseConfig = {
+    apiKey: "AIzaSyB-bbzttQt2-3HfycMFfUREjrjOopauU6I",
+    authDomain: "absensi-kegiatan-santri.firebaseapp.com",
+    projectId: "absensi-kegiatan-santri",
+    storageBucket: "absensi-kegiatan-santri.firebasestorage.app",
+    messagingSenderId: "364902117670",
+    appId: "1:364902117670:web:5108eb4e5ee3eb76db11e7"
+  };
+
+  // 3. Mulai Firebase
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // 4. Fungsi Tes Simpan Data (Agar bisa dipanggil tombol HTML)
+  window.tesKoneksi = async function() {
+      alert("Sedang mencoba menghubungi Database...");
+      
+      try {
+          // Mencoba menyimpan data sederhana
+          await addDoc(collection(db, "uji_coba"), {
+              pesan: "Halo Firebase! Ini tes dari Santri.",
+              jam: new Date().toString(),
+              status: "Sukses Besar"
+          });
+          
+          alert("✅ BERHASIL! Data sudah tersimpan di Firebase!");
+      } catch (error) {
+          alert("❌ Gagal: " + error.message);
+          console.error("Error detail:", error);
+      }
+  }
+</script>
 </body>
 </html>

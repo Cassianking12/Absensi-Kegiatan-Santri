@@ -364,12 +364,12 @@
             content.innerHTML = '';
             
             window.state = state;
-            
+
             switch(state.activeTab) {
                 case 'dashboard': renderDashboard(content); break;
                 case 'santri': renderSantriManager(content); break;
                 case 'absensi': renderAttendanceInput(content); break;
-                case 'laporan': renderReports(content); break;
+                case 'laporan': renderReports(content); window.ambilDataLaporan(); break;
                 case 'profil': renderProfileSettings(content); break;
             }
             lucide.createIcons();
@@ -748,6 +748,7 @@
 
         // 4. REPORTS
         function renderReports(container) {
+        window.renderReports = renderReports;
             window.setReportDate = (val) => { state.laporanDate = val; renderReports(container); };
             const records = state.attendanceRecords.filter(r => r.date === state.laporanDate);
             const activeSantri = state.santriList.filter(s => s.gender === state.genderFilter);
@@ -832,9 +833,8 @@
     </script>
     <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  // Konfigurasi Kamu (Tetap Sama)
   const firebaseConfig = {
     apiKey: "AIzaSyB-bbzttQt2-3HfycMFfUREjrjOopauU6I",
     authDomain: "absensi-kegiatan-santri.firebaseapp.com",
@@ -847,46 +847,60 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // FUNGSI UTAMA: Simpan Absensi
+  // FUNGSI 1: SIMPAN (Tetap sama)
   window.simpanKeFirebase = async function() {
-      // 1. Coba ambil data dari variabel 'state' punya kamu
-      let dataForm;
-      try {
-          dataForm = window.state.absensiForm; 
-      } catch (e) {
-          alert("Gagal membaca data form. Pastikan variabel 'state' bisa diakses.");
-          return;
-      }
+      let dataForm = window.state.absensiForm; 
+      if (!dataForm || !dataForm.date) { alert("Isi tanggal dulu!"); return; }
 
-      // 2. Cek apakah data kosong?
-      if (!dataForm || !dataForm.date || !dataForm.activity) {
-          alert("⚠️ Mohon isi TANGGAL dan KEGIATAN dulu sebelum simpan!");
-          return;
-      }
-
-      // 3. Tampilkan Loading (Biar user tahu sedang proses)
       const tombol = document.getElementById('btn-simpan-asli');
-      if(tombol) tombol.innerText = "⏳ Sedang Mengirim...";
+      if(tombol) tombol.innerText = "⏳ Mengirim...";
 
       try {
-          // 4. Kirim ke Firebase (Nama tabel: 'laporan_absensi')
           await addDoc(collection(db, "laporan_absensi"), {
               tanggal: dataForm.date,
               kegiatan: dataForm.activity,
-              detail_kehadiran: dataForm.data, // Ini data H/S/I/A per anak
-              waktu_input: new Date().toString(),
-              penginput: "Admin/Ustadz"
+              detail_kehadiran: dataForm.data,
+              waktu_input: new Date().toString()
           });
-          
-          alert("✅ ALHAMDULILLAH! Data Absensi Berhasil Disimpan!");
-          
-          // Kembalikan tulisan tombol
+          alert("✅ ALHAMDULILLAH! Data Masuk!");
           if(tombol) tombol.innerText = "Simpan Data";
-          
+          // Setelah simpan, langsung update laporan juga biar canggih
+          window.ambilDataLaporan(); 
       } catch (error) {
-          alert("❌ Gagal simpan: " + error.message);
-          console.error("Error detail:", error);
-          if(tombol) tombol.innerText = "Coba Lagi";
+          alert("❌ Gagal: " + error.message);
+      }
+  }
+
+  // FUNGSI 2: AMBIL DATA (Ini yang BARU)
+  window.ambilDataLaporan = async function() {
+      console.log("Sedang mengambil data dari gudang...");
+      
+      try {
+          // Ambil semua data dari folder 'laporan_absensi'
+          const querySnapshot = await getDocs(collection(db, "laporan_absensi"));
+          
+          if(window.state) {
+              // Kosongkan memori lama biar tidak dobel
+              window.state.attendanceRecords = []; 
+              
+              querySnapshot.forEach((doc) => {
+                  const dataFB = doc.data();
+                  // Masukkan data Firebase ke tabel kamu
+                  window.state.attendanceRecords.push({
+                      date: dataFB.tanggal,
+                      activity: dataFB.kegiatan,
+                      data: dataFB.detail_kehadiran
+                  });
+              });
+              
+              // Refresh Tampilan Laporan (Jika sedang dibuka)
+              if(window.renderReports && window.state.activeTab === 'laporan') {
+                  const container = document.getElementById('content-area');
+                  window.renderReports(container);
+              }
+          }
+      } catch (error) {
+          console.error("Gagal ambil data:", error);
       }
   }
 </script>

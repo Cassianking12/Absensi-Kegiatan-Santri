@@ -873,7 +873,33 @@
 
   // FUNGSI 2: AMBIL DATA (Ini yang BARU)
   window.ambilDataLaporan = async function() {
-      console.log("Sedang mengambil data dari gudang...");
+    console.log("Sedang menyedot data dari Firebase...");
+    try {
+        const querySnapshot = await getDocs(collection(db, "laporan_absensi"));
+        if(window.state) {
+            window.state.attendanceRecords = []; 
+            
+            querySnapshot.forEach((doc) => {
+                const dataFB = doc.data();
+                window.state.attendanceRecords.push({
+                    date: dataFB.tanggal,
+                    activity: dataFB.kegiatan,
+                    data: dataFB.detail_kehadiran
+                });
+            });
+
+            console.log("Data masuk ke memori:", window.state.attendanceRecords);
+
+            // INI KUNCINYA: Paksa layar laporan untuk update tampilan
+            if(window.renderReports && window.state.activeTab === 'laporan') {
+                const container = document.getElementById('content-area');
+                window.renderReports(container);
+            }
+        }
+    } catch (error) {
+        console.error("Gagal ambil data:", error);
+    }
+}
       
       try {
           // Ambil semua data dari folder 'laporan_absensi'

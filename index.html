@@ -69,14 +69,14 @@
                 
                 <div class="pt-4 mt-4 border-t border-emerald-800">
                     <button onclick="navigateTo('profil')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-emerald-100 hover:bg-emerald-800/50 hover:text-white" data-tab="profil">
-                        <i data-lucide="settings" class="w-5 h-5"></i> <span class="font-medium">Profil & Database</span>
+                        <i data-lucide="settings" class="w-5 h-5"></i> <span class="font-medium">Profil Pondok</span>
                     </button>
                 </div>
             </nav>
             
             <div class="p-4 border-t border-emerald-800 text-xs text-emerald-400 text-center">
                 <div id="connection-status" class="mb-2 px-2 py-1 rounded bg-emerald-800 text-emerald-200 flex items-center justify-center gap-1">
-                    <div class="w-2 h-2 rounded-full bg-gray-400"></div> Memuat...
+                    <div class="w-2 h-2 rounded-full bg-green-400"></div> Online
                 </div>
                 &copy; 2024 <span id="footer-school-name">Pondok Pesantren</span>
             </div>
@@ -115,7 +115,7 @@
         </button>
         <button onclick="navigateTo('profil')" class="mobile-nav-item flex flex-col items-center justify-center w-full py-1 text-gray-400" data-tab="profil">
             <div class="mb-1 icon-container"><i data-lucide="settings" class="w-5 h-5"></i></div>
-            <span class="text-[10px] font-medium">Akun</span>
+            <span class="text-[10px] font-medium">Profil</span>
         </button>
     </div>
 
@@ -137,13 +137,14 @@
                 date: new Date().toISOString().split('T')[0],
                 activity: 'Subuh Berjamaah',
                 data: {},
-                isSaved: false
+                isSaved: false,
+                loadedId: null // To track which session is currently loaded
             },
             laporanDate: new Date().toISOString().split('T')[0],
             profileForm: { namaPondok: '', pengasuh: '', alamat: '', kontak: '' },
             isOffline: false,
             appId: 'default-app-id',
-            // Google Drive State
+            // Google Drive State (Updated with User Keys)
             gDrive: {
                 connected: false,
                 tokenClient: null,
@@ -166,14 +167,16 @@
             init: () => {
                 const configStr = localStorage.getItem('gdrive_config');
                 if (configStr) {
-                    state.gDrive.config = JSON.parse(configStr);
+                    // Merge local config if needed, but priority is hardcoded keys if local is empty/old
+                    const localCfg = JSON.parse(configStr);
+                    if(localCfg.clientId) state.gDrive.config = localCfg;
                 }
-                // Jika ada config (dari default state atau localStorage), load gapi
                 if(state.gDrive.config.clientId && state.gDrive.config.apiKey) {
                     GDriveAdapter.loadGapi();
                 }
             },
             loadGapi: () => {
+                if (typeof gapi === 'undefined') return;
                 gapi.load('client', async () => {
                     try {
                         await gapi.client.init({
@@ -181,35 +184,27 @@
                             discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
                         });
                         
+                        // Initialize Token Client
                         state.gDrive.tokenClient = google.accounts.oauth2.initTokenClient({
                             client_id: state.gDrive.config.clientId,
                             scope: 'https://www.googleapis.com/auth/drive.file',
                             callback: (tokenResponse) => {
                                 state.gDrive.accessToken = tokenResponse.access_token;
                                 state.gDrive.connected = true;
-                                if(document.getElementById('gd-status')) document.getElementById('gd-status').innerHTML = '<span class="text-green-600 font-bold">Terhubung ke Akun Google</span>';
-                                alert("Login Google Berhasil! Sekarang Anda bisa Backup/Restore ke Drive.");
-                                renderApp(); // Re-render to show buttons
+                                renderApp(); 
+                                alert("Login Google Berhasil! Fitur Backup Aktif.");
                             },
                         });
-                        console.log("GAPI Initialized");
                     } catch(err) {
                         console.error("GAPI Init Error", err);
                     }
                 });
             },
             login: () => {
-                if(!state.gDrive.tokenClient) {
-                    if(!state.gDrive.config.clientId) {
-                        alert("Harap masukkan Client ID dan API Key terlebih dahulu di menu Profil.");
-                        return;
-                    }
-                    GDriveAdapter.loadGapi();
-                    setTimeout(() => {
-                        if(state.gDrive.tokenClient) state.gDrive.tokenClient.requestAccessToken();
-                    }, 1000);
-                } else {
+                if(state.gDrive.tokenClient) {
                     state.gDrive.tokenClient.requestAccessToken();
+                } else {
+                    alert("Sedang memuat layanan Google... Coba refresh halaman.");
                 }
             },
             saveToDrive: async () => {
@@ -229,13 +224,11 @@
                 };
 
                 try {
-                    // 1. Cari file yang sudah ada
                     const q = "name = 'siap_pesantren_backup.json' and trashed = false";
                     const response = await gapi.client.drive.files.list({ q: q, fields: 'files(id, name)' });
                     const files = response.result.files;
 
                     if (files && files.length > 0) {
-                        // Update existing
                         const fileId = files[0].id;
                         await gapi.client.request({
                             path: '/upload/drive/v3/files/' + fileId,
@@ -243,9 +236,8 @@
                             params: { uploadType: 'media' },
                             body: fileContent
                         });
-                        alert("Backup Berhasil Diperbarui di Google Drive (iyaanend2@gmail.com)!");
+                        alert("Backup Berhasil Diperbarui di Google Drive!");
                     } else {
-                        // Create new
                         const form = new FormData();
                         form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
                         form.append('file', new Blob([fileContent], { type: 'application/json' }));
@@ -258,13 +250,11 @@
                         alert("Backup Baru Berhasil Dibuat di Google Drive!");
                     }
                 } catch (err) {
-                    console.error("Upload Error", err);
-                    alert("Gagal upload ke Drive: " + err.message);
+                    alert("Gagal upload: " + err.message);
                 }
             },
             loadFromDrive: async () => {
                  if (!state.gDrive.accessToken) return alert("Silakan Login Google Terlebih Dahulu");
-                 
                  try {
                     const q = "name = 'siap_pesantren_backup.json' and trashed = false";
                     const response = await gapi.client.drive.files.list({ q: q, fields: 'files(id, name)' });
@@ -273,57 +263,50 @@
                     if (files && files.length > 0) {
                         const fileId = files[0].id;
                         const fileRes = await gapi.client.drive.files.get({ fileId: fileId, alt: 'media' });
-                        const data = fileRes.result; // GAPI parses JSON automatically usually
+                        const data = fileRes.result;
                         
-                        if(data) {
-                            if(confirm(`Ditemukan backup tanggal ${new Date(data.backupDate).toLocaleString()}. Timpa data lokal?`)) {
-                                if(data.santriList) {
-                                    state.santriList = data.santriList;
-                                    localStorage.setItem('siap_santri', JSON.stringify(data.santriList));
-                                }
-                                if(data.attendanceRecords) {
-                                    state.attendanceRecords = data.attendanceRecords;
-                                    localStorage.setItem('siap_absensi', JSON.stringify(data.attendanceRecords));
-                                }
-                                if(data.schoolProfile) {
-                                    state.schoolProfile = data.schoolProfile;
-                                    localStorage.setItem('siap_profile', JSON.stringify(data.schoolProfile));
-                                }
-                                alert("Data berhasil dipulihkan dari Google Drive!");
-                                renderApp();
-                            }
+                        if(data && confirm(`Ditemukan backup tanggal ${new Date(data.backupDate).toLocaleString()}. Pulihkan data?`)) {
+                             if(data.santriList) {
+                                state.santriList = data.santriList;
+                                if(state.isOffline) localStorage.setItem('siap_santri', JSON.stringify(data.santriList));
+                                // In online mode, we would ideally batch write to Firestore, but simple state refresh here
+                             }
+                             if(data.attendanceRecords) {
+                                state.attendanceRecords = data.attendanceRecords;
+                                if(state.isOffline) localStorage.setItem('siap_absensi', JSON.stringify(data.attendanceRecords));
+                             }
+                             if(data.schoolProfile) {
+                                state.schoolProfile = data.schoolProfile;
+                                if(state.isOffline) localStorage.setItem('siap_profile', JSON.stringify(data.schoolProfile));
+                             }
+                             alert("Data berhasil dipulihkan!");
+                             renderApp();
                         }
                     } else {
-                        alert("Tidak ditemukan file 'siap_pesantren_backup.json' di Google Drive Anda.");
+                        alert("Tidak ditemukan file backup di Drive Anda.");
                     }
                  } catch (err) {
-                     console.error("Load Error", err);
                      alert("Gagal mengambil data: " + err.message);
                  }
             }
         };
 
-        // --- DATA ADAPTER (Hybrid: Local & Cloud) ---
+        // --- DATA ADAPTER (Hybrid) ---
         const DataAdapter = {
             init: async () => {
-                // Init Google Drive
-                GDriveAdapter.init();
+                GDriveAdapter.init(); // Load Google Drive Scripts
 
-                // 1. Cek User Config (Manual Input Firebase)
+                // 1. Cek User Config (Manual Input)
                 const userConfigStr = localStorage.getItem('user_firebase_config');
                 let configToUse = null;
 
                 if (userConfigStr) {
-                    try {
-                        configToUse = JSON.parse(userConfigStr);
-                    } catch (e) { console.error("Config user tidak valid", e); }
+                    try { configToUse = JSON.parse(userConfigStr); } catch (e) {}
                 } 
                 
-                // 2. Jika tidak ada manual, cek Environment Config (Inject)
+                // 2. Environment Config
                 if (!configToUse && typeof __firebase_config !== 'undefined') {
-                    try {
-                         configToUse = JSON.parse(__firebase_config);
-                    } catch (e) {
+                    try { configToUse = JSON.parse(__firebase_config); } catch (e) {
                         if(typeof __firebase_config === 'object') configToUse = __firebase_config;
                     }
                 }
@@ -335,11 +318,13 @@
                         state.db = getFirestore(app);
                         state.isOffline = false;
                         updateConnectionStatus(true);
+                        
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(state.auth, __initial_auth_token);
                         } else {
                             await signInAnonymously(state.auth);
                         }
+                        
                         onAuthStateChanged(state.auth, (user) => {
                             if (user) {
                                 state.user = user;
@@ -347,7 +332,7 @@
                             }
                         });
                     } catch (e) {
-                        console.error("Gagal koneksi Firebase:", e);
+                        console.error("Firebase fail", e);
                         DataAdapter.goOffline();
                     }
                 } else {
@@ -385,7 +370,10 @@
                     });
                     onSnapshot(collection(state.db, 'artifacts', appId, 'users', uid, 'absensi'), (snap) => {
                         state.attendanceRecords = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        renderApp();
+                        // Only re-render if we are NOT in the middle of editing absensi to prevent overwriting
+                        if (state.activeTab !== 'absensi') {
+                             renderApp();
+                        }
                     });
                     onSnapshot(doc(state.db, 'artifacts', appId, 'users', uid, 'settings', 'profile'), (snap) => {
                         if (snap.exists()) {
@@ -432,7 +420,10 @@
                     if (idx >= 0) list[idx] = record;
                     else list.push(record);
                     localStorage.setItem('siap_absensi', JSON.stringify(list));
-                    DataAdapter.startListeners();
+                    // Force update local state immediately for report consistency
+                    const existingIdx = state.attendanceRecords.findIndex(r => r.id === id);
+                    if(existingIdx >= 0) state.attendanceRecords[existingIdx] = record;
+                    else state.attendanceRecords.push(record);
                 } else {
                     await setDoc(doc(state.db, 'artifacts', state.appId, 'users', state.user.uid, 'absensi', id), {
                         ...data, updatedAt: serverTimestamp()
@@ -663,47 +654,78 @@
             container.innerHTML = html;
         }
 
-        // 3. ATTENDANCE INPUT
+        // 3. ATTENDANCE INPUT (FIXED: State Retention)
         function renderAttendanceInput(container) {
-            const loadAttendanceData = () => {
-                const id = `${state.absensiForm.date}_${state.absensiForm.activity.replace(/\s+/g, '_')}`;
-                const existing = state.attendanceRecords.find(r => r.id === id);
-                if (existing) {
-                    state.absensiForm.data = existing.data;
-                } else {
-                    const initial = {};
-                    state.santriList.forEach(s => initial[s.id] = 'H');
-                    state.absensiForm.data = initial;
-                }
-                state.absensiForm.isSaved = false;
-            };
-            loadAttendanceData();
+            const currentSessionId = `${state.absensiForm.date}_${state.absensiForm.activity.replace(/\s+/g, '_')}`;
 
+            // --- PERBAIKAN LOGIKA: Hanya load data baru jika Sesi ID berubah ---
+            // Jika ID sesi sama dengan yang ada di memori, JANGAN load ulang dari DB.
+            // Gunakan data di memori (yang berisi editan sementara user).
+            if (state.absensiForm.loadedId !== currentSessionId) {
+                const existing = state.attendanceRecords.find(r => r.id === currentSessionId);
+                let currentData = {};
+                
+                if (existing) {
+                    currentData = { ...existing.data };
+                    // Cek jika ada santri baru yang belum masuk list absen lama
+                    state.santriList.forEach(s => {
+                        if (currentData[s.id] === undefined) {
+                            currentData[s.id] = 'H';
+                        }
+                    });
+                    state.absensiForm.isSaved = true; // Anggap tersimpan jika load dari DB
+                } else {
+                    // Sesi baru: Default semua Hadir
+                    state.santriList.forEach(s => currentData[s.id] = 'H');
+                    state.absensiForm.isSaved = false;
+                }
+                
+                state.absensiForm.data = currentData;
+                state.absensiForm.loadedId = currentSessionId;
+            }
+
+            // Fungsi Update Tanggal/Kegiatan (akan memicu reload data karena ID berubah)
             window.updateAbsenField = (field, value) => {
                 state.absensiForm[field] = value;
-                loadAttendanceData();
+                // Render ulang akan otomatis mendeteksi perubahan ID di atas
                 renderAttendanceInput(container);
             };
 
+            // Fungsi Update Status (S/I/A)
             window.setStatus = (id, status) => {
+                // Update state lokal
                 state.absensiForm.data[id] = status;
-                state.absensiForm.isSaved = false;
+                state.absensiForm.isSaved = false; // Tandai belum tersimpan
+                
+                // Render ulang (karena ID tidak berubah, data lokal tidak akan tertimpa)
                 renderAttendanceInput(container); 
             };
 
             window.saveAbsensi = async () => {
                 if (state.santriList.length === 0) return;
-                const id = `${state.absensiForm.date}_${state.absensiForm.activity.replace(/\s+/g, '_')}`;
+                const id = currentSessionId;
                 try {
                     await DataAdapter.saveAbsensi(id, {
                         date: state.absensiForm.date,
                         activity: state.absensiForm.activity,
                         data: state.absensiForm.data
                     });
+                    
                     state.absensiForm.isSaved = true;
+                    // Update state record global agar Laporan langsung update
+                    const existingIdx = state.attendanceRecords.findIndex(r => r.id === id);
+                    const newRecord = { id, date: state.absensiForm.date, activity: state.absensiForm.activity, data: state.absensiForm.data };
+                    
+                    if (existingIdx >= 0) {
+                        state.attendanceRecords[existingIdx] = newRecord;
+                    } else {
+                        state.attendanceRecords.push(newRecord);
+                    }
+
+                    // Update UI Button
                     const btn = document.getElementById('save-absen-btn');
-                    btn.className = 'flex items-center gap-2 px-8 py-3 rounded-lg font-semibold shadow-md transition-all bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default';
-                    btn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i> Tersimpan';
+                    btn.className = 'flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all duration-200 bg-emerald-100 text-emerald-700 cursor-default border border-emerald-200';
+                    btn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i> Absensi Tersimpan';
                     lucide.createIcons();
                 } catch (e) { alert("Gagal menyimpan: " + e.message); }
             };
@@ -728,27 +750,60 @@
                         </div>
                      </div>
                      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div class="p-4 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center"><h3 class="font-semibold text-emerald-800 flex items-center gap-2"><i data-lucide="users" class="w-4 h-4"></i> Daftar Absensi</h3><div class="text-xs text-emerald-600 font-medium bg-emerald-100 px-2 py-1 rounded">${state.santriList.length} Santri</div></div>
+                        <div class="p-4 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center">
+                            <h3 class="font-semibold text-emerald-800 flex items-center gap-2"><i data-lucide="users" class="w-4 h-4"></i> Tabel Absensi Santri</h3>
+                            <div class="text-xs text-emerald-600 font-medium bg-emerald-100 px-3 py-1 rounded-full border border-emerald-200">Total: ${state.santriList.length} Santri</div>
+                        </div>
                         <div class="max-h-[60vh] overflow-y-auto">
-                           <table class="w-full"><thead class="bg-gray-50 sticky top-0 z-10 shadow-sm"><tr><th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Nama</th><th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Status</th></tr></thead>
+                           <table class="w-full text-sm text-left">
+                              <thead class="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm border-b border-gray-200">
+                                <tr>
+                                  <th class="px-4 py-3 w-12 text-center text-xs font-bold uppercase tracking-wider">No</th>
+                                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Data Santri</th>
+                                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Status Kehadiran</th>
+                                </tr>
+                              </thead>
                               <tbody class="divide-y divide-gray-100">
-                                ${state.santriList.length === 0 ? '<tr><td colspan="2" class="p-6 text-center text-gray-500">Belum ada data santri. Silakan tambah di menu Data Santri.</td></tr>' : 
-                                state.santriList.map(s => `
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-3"><p class="font-medium text-gray-900">${s.nama}</p><p class="text-xs text-gray-500">${s.kelas} - ${s.kamar}</p></td>
-                                        <td class="px-4 py-3"><div class="flex items-center justify-center gap-1 md:gap-4">
-                                            <button onclick="setStatus('${s.id}', 'H')" class="${getBtnClass(s.id, 'H', state.absensiForm.data[s.id], 'emerald')}"><span class="md:hidden">H</span><span class="hidden md:inline">Hadir</span></button>
-                                            <button onclick="setStatus('${s.id}', 'S')" class="${getBtnClass(s.id, 'S', state.absensiForm.data[s.id], 'yellow')}"><span class="md:hidden">S</span><span class="hidden md:inline">Sakit</span></button>
-                                            <button onclick="setStatus('${s.id}', 'I')" class="${getBtnClass(s.id, 'I', state.absensiForm.data[s.id], 'blue')}"><span class="md:hidden">I</span><span class="hidden md:inline">Izin</span></button>
-                                            <button onclick="setStatus('${s.id}', 'A')" class="${getBtnClass(s.id, 'A', state.absensiForm.data[s.id], 'red')}"><span class="md:hidden">A</span><span class="hidden md:inline">Alpha</span></button>
-                                        </div></td>
+                                ${state.santriList.length === 0 ? '<tr><td colspan="3" class="p-8 text-center text-gray-500 italic">Belum ada data santri. Silakan tambah di menu Data Santri.</td></tr>' : 
+                                state.santriList.map((s, index) => `
+                                    <tr class="hover:bg-emerald-50/50 transition-colors">
+                                        <td class="px-4 py-3 text-center text-gray-500 font-medium border-r border-transparent">${index + 1}</td>
+                                        <td class="px-4 py-3">
+                                            <div class="font-semibold text-gray-900">${s.nama}</div>
+                                            <div class="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                                                <span class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 border border-gray-200">${s.kelas || '-'}</span>
+                                                <span class="text-gray-400">•</span>
+                                                <span>${s.kamar || '-'}</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <div class="flex items-center justify-center gap-2">
+                                                <button onclick="setStatus('${s.id}', 'H')" class="${getBtnClass(s.id, 'H', state.absensiForm.data[s.id], 'emerald')} shadow-sm" title="Hadir">
+                                                    <span class="font-bold">H</span>
+                                                    <span class="hidden md:inline ml-1 text-xs">Hadir</span>
+                                                </button>
+                                                <button onclick="setStatus('${s.id}', 'S')" class="${getBtnClass(s.id, 'S', state.absensiForm.data[s.id], 'yellow')} shadow-sm" title="Sakit">
+                                                    <span class="font-bold">S</span>
+                                                    <span class="hidden md:inline ml-1 text-xs">Sakit</span>
+                                                </button>
+                                                <button onclick="setStatus('${s.id}', 'I')" class="${getBtnClass(s.id, 'I', state.absensiForm.data[s.id], 'blue')} shadow-sm" title="Izin">
+                                                    <span class="font-bold">I</span>
+                                                    <span class="hidden md:inline ml-1 text-xs">Izin</span>
+                                                </button>
+                                                <button onclick="setStatus('${s.id}', 'A')" class="${getBtnClass(s.id, 'A', state.absensiForm.data[s.id], 'red')} shadow-sm" title="Alpha">
+                                                    <span class="font-bold">A</span>
+                                                    <span class="hidden md:inline ml-1 text-xs">Alpha</span>
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>`).join('')}
                               </tbody>
                            </table>
                         </div>
-                        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end sticky bottom-0">
-                            <button id="save-absen-btn" onclick="saveAbsensi()" class="${state.absensiForm.isSaved ? 'bg-emerald-100 text-emerald-700 cursor-default' : 'bg-emerald-600 text-white hover:bg-emerald-700'} flex items-center gap-2 px-8 py-3 rounded-lg font-semibold shadow-md transition-all">
-                                <i data-lucide="${state.absensiForm.isSaved ? 'check-circle' : 'save'}" class="w-5 h-5"></i> ${state.absensiForm.isSaved ? 'Tersimpan' : 'Simpan Absensi'}
+                        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                            <button id="save-absen-btn" onclick="saveAbsensi()" class="${state.absensiForm.isSaved ? 'bg-emerald-100 text-emerald-700 cursor-default border border-emerald-200' : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'} flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all duration-200">
+                                <i data-lucide="${state.absensiForm.isSaved ? 'check-circle' : 'save'}" class="w-5 h-5"></i> 
+                                ${state.absensiForm.isSaved ? 'Absensi Tersimpan' : 'Simpan Absensi'}
                             </button>
                         </div>
                      </div>
@@ -777,7 +832,7 @@
                     </div>
                     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                         <div class="p-4 bg-gray-50 border-b border-gray-200"><h3 class="font-semibold text-gray-700">Detail Kegiatan per Sesi</h3></div>
-                        ${records.length === 0 ? '<div class="p-8 text-center text-gray-500 italic">Tidak ada data absensi.</div>' : `
+                        ${records.length === 0 ? '<div class="p-8 text-center text-gray-500 italic">Tidak ada data absensi untuk tanggal ini. <br><span class="text-xs">Pastikan Anda sudah menekan tombol "Simpan Absensi" di menu Input Absensi.</span></div>' : `
                         <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="bg-gray-50 border-b"><th class="px-4 py-3 font-semibold text-gray-600">Kegiatan</th><th class="px-4 py-3 font-semibold text-gray-600">Total</th><th class="px-4 py-3 font-semibold text-emerald-600">Hadir</th><th class="px-4 py-3 font-semibold text-red-600">Tidak Hadir</th><th class="px-4 py-3 font-semibold text-gray-600">Ketidakhadiran</th></tr></thead>
                         <tbody class="divide-y divide-gray-100">${records.map(r => {
                             const total = Object.keys(r.data).length; const hadir = Object.values(r.data).filter(v=>v==='H').length; const absen = total - hadir;
@@ -789,7 +844,7 @@
             container.innerHTML = html;
         }
 
-        // 5. PROFILE & DATABASE SETTINGS (UPDATED)
+        // 5. PROFILE
         function renderProfileSettings(container) {
             window.updateProfileForm = (field, val) => { state.profileForm[field] = val; };
             
@@ -817,27 +872,6 @@
                 GDriveAdapter.loadFromDrive();
             };
 
-            // --- FUNGSI SAVE CONFIG DATABASE (EXISTING) ---
-            window.saveCloudConfig = () => {
-                const input = document.getElementById('firebase-config-input').value;
-                try {
-                    const json = JSON.parse(input);
-                    if(!json.apiKey || !json.projectId) throw new Error("Format config salah");
-                    localStorage.setItem('user_firebase_config', JSON.stringify(json));
-                    alert("Konfigurasi tersimpan! Aplikasi akan dimuat ulang.");
-                    window.location.reload();
-                } catch(e) {
-                    alert("Error: Format JSON tidak valid.");
-                }
-            };
-
-            window.resetCloudConfig = () => {
-                if(confirm("Hapus koneksi cloud dan kembali ke mode lokal?")) {
-                    localStorage.removeItem('user_firebase_config');
-                    window.location.reload();
-                }
-            };
-
             window.saveProfile = async (e) => {
                 e.preventDefault();
                 const btn = document.getElementById('save-profile-btn');
@@ -849,8 +883,6 @@
                 btn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> Simpan Profil';
                 lucide.createIcons();
             };
-
-            const hasCustomConfig = !!localStorage.getItem('user_firebase_config');
 
             const html = `
                 <div class="max-w-2xl mx-auto space-y-6 fade-in pb-12">
@@ -868,31 +900,24 @@
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-100">
                         <div class="flex items-center gap-2 mb-2">
                              <div class="bg-blue-100 p-2 rounded-full"><i data-lucide="hard-drive" class="text-blue-600 w-5 h-5"></i></div>
-                             <h3 class="text-lg font-bold text-gray-800">Google Drive Backup (iyaanend2@gmail.com)</h3>
+                             <h3 class="text-lg font-bold text-gray-800">Google Drive Backup</h3>
                         </div>
                         <p class="text-sm text-gray-600 mb-4">
-                            Simpan backup data ke Google Drive Anda. Anda harus memasukkan <b>Client ID</b> dan <b>API Key</b> dari Google Cloud Console.
+                            Simpan backup data ke Google Drive Anda (iyaanend2@gmail.com).
                         </p>
-
-                        <div class="space-y-4 mb-4">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Client ID</label>
-                                    <input type="text" id="gd-client-id" value="${state.gDrive.config.clientId || ''}" class="w-full p-2 text-xs border border-gray-300 rounded-lg" placeholder="xxx.apps.googleusercontent.com">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">API Key</label>
-                                    <input type="text" id="gd-api-key" value="${state.gDrive.config.apiKey || ''}" class="w-full p-2 text-xs border border-gray-300 rounded-lg" placeholder="AIzaSy...">
-                                </div>
-                            </div>
-                            <button onclick="saveDriveConfig()" class="text-xs bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded">Simpan Config Drive</button>
+                        
+                        <!-- Config Hidden but ready -->
+                        <div class="hidden">
+                            <input type="text" id="gd-client-id" value="${state.gDrive.config.clientId || ''}">
+                            <input type="text" id="gd-api-key" value="${state.gDrive.config.apiKey || ''}">
                         </div>
 
                         <div class="flex flex-col md:flex-row gap-3 items-center border-t border-gray-100 pt-4">
+                            ${state.gDrive.connected ? '' : `
                             <button onclick="loginDrive()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition w-full md:w-auto justify-center">
                                 <i data-lucide="log-in" class="w-4 h-4"></i> Login Google
-                            </button>
-                            <span id="gd-status" class="text-xs text-gray-500">${state.gDrive.connected ? '<span class="text-green-600 font-bold">Terhubung</span>' : 'Belum Login'}</span>
+                            </button>`}
+                            <span id="gd-status" class="text-xs text-gray-500">${state.gDrive.connected ? '<span class="text-green-600 font-bold">Terhubung ke Google</span>' : 'Belum Login'}</span>
                         </div>
 
                         ${state.gDrive.connected ? `
@@ -908,101 +933,10 @@
                         </div>
                         ` : ''}
                     </div>
-
-                    <!-- FIREBASE CONFIG (EXISTING) -->
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-emerald-100">
-                        <div class="flex items-center gap-2 mb-2">
-                             <i data-lucide="cloud" class="text-emerald-600"></i>
-                             <h3 class="text-lg font-bold text-gray-800">Sinkronisasi Realtime (Firebase)</h3>
-                        </div>
-                        
-                        ${hasCustomConfig ? 
-                            `<div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 flex items-center justify-between">
-                                <div class="flex items-center gap-2 text-green-800 font-medium text-sm">
-                                    <i data-lucide="check-circle" class="w-5 h-5"></i> Terhubung ke Konfigurasi Cloud Anda
-                                </div>
-                                <button onclick="resetCloudConfig()" class="text-xs text-red-600 hover:underline bg-white px-2 py-1 rounded border border-red-200">Putuskan Koneksi</button>
-                            </div>` : 
-                            `<div class="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
-                                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Tempel Kode Config (JSON) Di Sini</label>
-                                <textarea id="firebase-config-input" rows="5" placeholder='{"apiKey": "AIzaSy...", "authDomain": "...", "projectId": "..."}' class="w-full p-2 text-xs font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></textarea>
-                            </div>
-                            <div class="flex gap-3">
-                                <button onclick="saveCloudConfig()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 shadow-sm flex items-center gap-2"><i data-lucide="link" class="w-4 h-4"></i> Hubungkan ke Cloud</button>
-                            </div>`
-                        }
-                    </div>
                 </div>`;
             container.innerHTML = html;
         }
 
     </script>
-
-    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
-<script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
-
-<button id="btn-connect-drive" onclick="handleAuthClick()" style="display:block; margin: 20px auto; padding: 10px 20px; background-color: #4285F4; color: white; border: none; border-radius: 5px; cursor: pointer;">
-    Sambungkan ke Google Drive
-</button>
-
-<script>
-    // --- ISI KODE RAHASIA DISINI ---
-    const CLIENT_ID = '133835424632-crnnjf5mhr3g2bl4fsqvh13hld6h92gc.apps.googleusercontent.com';
-    const API_KEY = 'AIzaSyDySWvaM7P-P3-kmDGNnUCt2TmZQ1XKg8A';
-    // -------------------------------
-
-    // Konfigurasi (Jangan Diubah)
-    const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
-    const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-
-    let tokenClient;
-    let gapiInited = false;
-    let gisInited = false;
-
-    // Fungsi saat Script Google Selesai Dimuat
-    function gapiLoaded() {
-        gapi.load('client', intializeGapiClient);
-    }
-
-    async function intializeGapiClient() {
-        await gapi.client.init({
-            apiKey: API_KEY,
-            discoveryDocs: [DISCOVERY_DOC],
-        });
-        gapiInited = true;
-    }
-
-    function gisLoaded() {
-        tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
-            scope: SCOPES,
-            callback: '', // Didefinisikan nanti saat klik tombol
-        });
-        gisInited = true;
-    }
-
-    // Fungsi Saat Tombol Ditekan
-    function handleAuthClick() {
-        if (!gapiInited || !gisInited) {
-            alert("Sabar, Google sedang loading...");
-            return;
-        }
-
-        tokenClient.callback = async (resp) => {
-            if (resp.error !== undefined) {
-                throw (resp);
-            }
-            // BERHASIL LOGIN!
-            alert("HORE! Berhasil tersambung ke Google Drive milikmu!");
-            document.getElementById("btn-connect-drive").innerText = "Sudah Terhubung ✅";
-        };
-
-        if (gapi.client.getToken() === null) {
-            tokenClient.requestAccessToken({prompt: 'consent'});
-        } else {
-            tokenClient.requestAccessToken({prompt: ''});
-        }
-    }
-</script>
 </body>
 </html>

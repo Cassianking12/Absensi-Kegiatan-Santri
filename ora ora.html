@@ -884,7 +884,7 @@
                 window.state.attendanceRecords.push({
                     date: dataFB.tanggal,
                     activity: dataFB.kegiatan,
-                    data: dataFB.detail_kehadiran
+                    data: dataFB.detail_kehadiran || {}
                 });
             });
 

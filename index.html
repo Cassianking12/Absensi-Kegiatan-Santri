@@ -14,6 +14,10 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
+    <!-- Google API Scripts -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+
     <style>
         body { font-family: 'Inter', sans-serif; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
@@ -65,14 +69,14 @@
                 
                 <div class="pt-4 mt-4 border-t border-emerald-800">
                     <button onclick="navigateTo('profil')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-emerald-100 hover:bg-emerald-800/50 hover:text-white" data-tab="profil">
-                        <i data-lucide="settings" class="w-5 h-5"></i> <span class="font-medium">Profil Pondok</span>
+                        <i data-lucide="settings" class="w-5 h-5"></i> <span class="font-medium">Profil & Database</span>
                     </button>
                 </div>
             </nav>
             
             <div class="p-4 border-t border-emerald-800 text-xs text-emerald-400 text-center">
                 <div id="connection-status" class="mb-2 px-2 py-1 rounded bg-emerald-800 text-emerald-200 flex items-center justify-center gap-1">
-                    <div class="w-2 h-2 rounded-full bg-green-400"></div> Online
+                    <div class="w-2 h-2 rounded-full bg-gray-400"></div> Memuat...
                 </div>
                 &copy; 2024 <span id="footer-school-name">Pondok Pesantren</span>
             </div>
@@ -111,7 +115,7 @@
         </button>
         <button onclick="navigateTo('profil')" class="mobile-nav-item flex flex-col items-center justify-center w-full py-1 text-gray-400" data-tab="profil">
             <div class="mb-1 icon-container"><i data-lucide="settings" class="w-5 h-5"></i></div>
-            <span class="text-[10px] font-medium">Profil</span>
+            <span class="text-[10px] font-medium">Akun</span>
         </button>
     </div>
 
@@ -121,7 +125,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // --- GLOBAL STATE & CONFIG ---
+        // --- GLOBAL STATE ---
         let state = {
             user: null,
             activeTab: 'dashboard',
@@ -137,7 +141,15 @@
             },
             laporanDate: new Date().toISOString().split('T')[0],
             profileForm: { namaPondok: '', pengasuh: '', alamat: '', kontak: '' },
-            isOffline: false
+            isOffline: false,
+            appId: 'default-app-id',
+            // Google Drive State
+            gDrive: {
+                connected: false,
+                tokenClient: null,
+                accessToken: null,
+                config: { clientId: '', apiKey: '' }
+            }
         };
 
         const activities = [
@@ -146,28 +158,185 @@
             'Isya & Taklim', 'Tahajud'
         ];
 
-        // --- DATA ADAPTER (The Magic Part) ---
-        // This allows the app to switch between Firebase and LocalStorage automatically
+        // --- GOOGLE DRIVE ADAPTER ---
+        const GDriveAdapter = {
+            init: () => {
+                const configStr = localStorage.getItem('gdrive_config');
+                if (configStr) {
+                    state.gDrive.config = JSON.parse(configStr);
+                    // Jika ada config, load gapi
+                    if(state.gDrive.config.clientId && state.gDrive.config.apiKey) {
+                        GDriveAdapter.loadGapi();
+                    }
+                }
+            },
+            loadGapi: () => {
+                gapi.load('client', async () => {
+                    try {
+                        await gapi.client.init({
+                            apiKey: state.gDrive.config.apiKey,
+                            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+                        });
+                        
+                        state.gDrive.tokenClient = google.accounts.oauth2.initTokenClient({
+                            client_id: state.gDrive.config.clientId,
+                            scope: 'https://www.googleapis.com/auth/drive.file',
+                            callback: (tokenResponse) => {
+                                state.gDrive.accessToken = tokenResponse.access_token;
+                                state.gDrive.connected = true;
+                                if(document.getElementById('gd-status')) document.getElementById('gd-status').innerHTML = '<span class="text-green-600 font-bold">Terhubung ke Akun Google</span>';
+                                alert("Login Google Berhasil! Sekarang Anda bisa Backup/Restore ke Drive.");
+                                renderApp(); // Re-render to show buttons
+                            },
+                        });
+                        console.log("GAPI Initialized");
+                    } catch(err) {
+                        console.error("GAPI Init Error", err);
+                    }
+                });
+            },
+            login: () => {
+                if(!state.gDrive.tokenClient) {
+                    if(!state.gDrive.config.clientId) {
+                        alert("Harap masukkan Client ID dan API Key terlebih dahulu di menu Profil.");
+                        return;
+                    }
+                    GDriveAdapter.loadGapi();
+                    setTimeout(() => {
+                        if(state.gDrive.tokenClient) state.gDrive.tokenClient.requestAccessToken();
+                    }, 1000);
+                } else {
+                    state.gDrive.tokenClient.requestAccessToken();
+                }
+            },
+            saveToDrive: async () => {
+                if (!state.gDrive.accessToken) return alert("Silakan Login Google Terlebih Dahulu");
+                
+                const dataToSave = {
+                    santriList: state.santriList,
+                    attendanceRecords: state.attendanceRecords,
+                    schoolProfile: state.schoolProfile,
+                    backupDate: new Date().toISOString()
+                };
+                
+                const fileContent = JSON.stringify(dataToSave);
+                const fileMetadata = {
+                    'name': 'siap_pesantren_backup.json',
+                    'mimeType': 'application/json'
+                };
+
+                try {
+                    // 1. Cari file yang sudah ada
+                    const q = "name = 'siap_pesantren_backup.json' and trashed = false";
+                    const response = await gapi.client.drive.files.list({ q: q, fields: 'files(id, name)' });
+                    const files = response.result.files;
+
+                    if (files && files.length > 0) {
+                        // Update existing
+                        const fileId = files[0].id;
+                        await gapi.client.request({
+                            path: '/upload/drive/v3/files/' + fileId,
+                            method: 'PATCH',
+                            params: { uploadType: 'media' },
+                            body: fileContent
+                        });
+                        alert("Backup Berhasil Diperbarui di Google Drive (iyaanend2@gmail.com)!");
+                    } else {
+                        // Create new
+                        const form = new FormData();
+                        form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
+                        form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+                        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                            method: 'POST',
+                            headers: new Headers({ 'Authorization': 'Bearer ' + state.gDrive.accessToken }),
+                            body: form
+                        });
+                        alert("Backup Baru Berhasil Dibuat di Google Drive!");
+                    }
+                } catch (err) {
+                    console.error("Upload Error", err);
+                    alert("Gagal upload ke Drive: " + err.message);
+                }
+            },
+            loadFromDrive: async () => {
+                 if (!state.gDrive.accessToken) return alert("Silakan Login Google Terlebih Dahulu");
+                 
+                 try {
+                    const q = "name = 'siap_pesantren_backup.json' and trashed = false";
+                    const response = await gapi.client.drive.files.list({ q: q, fields: 'files(id, name)' });
+                    const files = response.result.files;
+
+                    if (files && files.length > 0) {
+                        const fileId = files[0].id;
+                        const fileRes = await gapi.client.drive.files.get({ fileId: fileId, alt: 'media' });
+                        const data = fileRes.result; // GAPI parses JSON automatically usually
+                        
+                        if(data) {
+                            if(confirm(`Ditemukan backup tanggal ${new Date(data.backupDate).toLocaleString()}. Timpa data lokal?`)) {
+                                if(data.santriList) {
+                                    state.santriList = data.santriList;
+                                    localStorage.setItem('siap_santri', JSON.stringify(data.santriList));
+                                }
+                                if(data.attendanceRecords) {
+                                    state.attendanceRecords = data.attendanceRecords;
+                                    localStorage.setItem('siap_absensi', JSON.stringify(data.attendanceRecords));
+                                }
+                                if(data.schoolProfile) {
+                                    state.schoolProfile = data.schoolProfile;
+                                    localStorage.setItem('siap_profile', JSON.stringify(data.schoolProfile));
+                                }
+                                alert("Data berhasil dipulihkan dari Google Drive!");
+                                renderApp();
+                            }
+                        }
+                    } else {
+                        alert("Tidak ditemukan file 'siap_pesantren_backup.json' di Google Drive Anda.");
+                    }
+                 } catch (err) {
+                     console.error("Load Error", err);
+                     alert("Gagal mengambil data: " + err.message);
+                 }
+            }
+        };
+
+        // --- DATA ADAPTER (Hybrid: Local & Cloud) ---
         const DataAdapter = {
             init: async () => {
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-                const hasConfig = Object.keys(firebaseConfig).length > 0;
-                
-                if (hasConfig) {
+                // Init Google Drive
+                GDriveAdapter.init();
+
+                // 1. Cek User Config (Manual Input Firebase)
+                const userConfigStr = localStorage.getItem('user_firebase_config');
+                let configToUse = null;
+
+                if (userConfigStr) {
                     try {
-                        const app = initializeApp(firebaseConfig);
+                        configToUse = JSON.parse(userConfigStr);
+                    } catch (e) { console.error("Config user tidak valid", e); }
+                } 
+                
+                // 2. Jika tidak ada manual, cek Environment Config (Inject)
+                if (!configToUse && typeof __firebase_config !== 'undefined') {
+                    try {
+                         configToUse = JSON.parse(__firebase_config);
+                    } catch (e) {
+                        if(typeof __firebase_config === 'object') configToUse = __firebase_config;
+                    }
+                }
+
+                if (configToUse && Object.keys(configToUse).length > 0) {
+                    try {
+                        const app = initializeApp(configToUse);
                         state.auth = getAuth(app);
                         state.db = getFirestore(app);
-                        state.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                         state.isOffline = false;
-                        
-                        // Auth Logic
+                        updateConnectionStatus(true);
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(state.auth, __initial_auth_token);
                         } else {
                             await signInAnonymously(state.auth);
                         }
-                        
                         onAuthStateChanged(state.auth, (user) => {
                             if (user) {
                                 state.user = user;
@@ -175,11 +344,10 @@
                             }
                         });
                     } catch (e) {
-                        console.error("Firebase init failed, switching to offline:", e);
+                        console.error("Gagal koneksi Firebase:", e);
                         DataAdapter.goOffline();
                     }
                 } else {
-                    console.warn("No Firebase Config found. Starting in LocalStorage mode.");
                     DataAdapter.goOffline();
                 }
             },
@@ -187,64 +355,42 @@
             goOffline: () => {
                 state.isOffline = true;
                 state.user = { uid: 'offline-user' };
-                // Update UI for offline mode
-                const statusEl = document.getElementById('connection-status');
-                if(statusEl) statusEl.innerHTML = '<div class="w-2 h-2 rounded-full bg-yellow-400"></div> Penyimpanan Lokal';
-                
-                const loadingText = document.getElementById('loading-text');
-                if(loadingText) loadingText.innerText = "Mode Penyimpanan Lokal...";
-
-                setTimeout(() => {
-                    DataAdapter.startListeners();
-                }, 500); // Fake delay for UX
+                updateConnectionStatus(false);
+                setTimeout(() => { DataAdapter.startListeners(); }, 500);
             },
 
             startListeners: () => {
                 if (state.isOffline) {
-                    // MOCK LISTENERS for LocalStorage
                     const loadLocal = () => {
                         const santriRaw = localStorage.getItem('siap_santri') || '[]';
                         const absensiRaw = localStorage.getItem('siap_absensi') || '[]';
                         const profileRaw = localStorage.getItem('siap_profile');
-                        
                         state.santriList = JSON.parse(santriRaw).sort((a, b) => a.nama.localeCompare(b.nama));
                         state.attendanceRecords = JSON.parse(absensiRaw);
                         if(profileRaw) state.schoolProfile = JSON.parse(profileRaw);
-                        
-                        renderApp();
-                        document.getElementById('loading-screen').classList.add('hidden');
-                        document.getElementById('app-container').classList.remove('hidden');
-                        document.getElementById('mobile-nav').classList.remove('hidden');
+                        finishLoading();
                     };
                     loadLocal();
-                    // Listen for changes in other tabs
                     window.addEventListener('storage', loadLocal);
                 } else {
-                    // FIREBASE LISTENERS
                     const uid = state.user.uid;
                     const appId = state.appId;
-                    
                     onSnapshot(collection(state.db, 'artifacts', appId, 'users', uid, 'santri'), (snap) => {
                         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         state.santriList = data.sort((a, b) => a.nama.localeCompare(b.nama));
-                        renderApp();
+                        finishLoading();
                     });
-
                     onSnapshot(collection(state.db, 'artifacts', appId, 'users', uid, 'absensi'), (snap) => {
                         state.attendanceRecords = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         renderApp();
                     });
-
                     onSnapshot(doc(state.db, 'artifacts', appId, 'users', uid, 'settings', 'profile'), (snap) => {
                         if (snap.exists()) {
                             state.schoolProfile = snap.data();
                             state.profileForm = { ...snap.data() };
                             updateGlobalUI();
                         }
-                        document.getElementById('loading-screen').classList.add('hidden');
-                        document.getElementById('app-container').classList.remove('hidden');
-                        document.getElementById('mobile-nav').classList.remove('hidden');
-                        renderApp();
+                        finishLoading();
                     });
                 }
             },
@@ -256,7 +402,7 @@
                     const list = JSON.parse(localStorage.getItem('siap_santri') || '[]');
                     list.push(newEntry);
                     localStorage.setItem('siap_santri', JSON.stringify(list));
-                    DataAdapter.startListeners(); // Refresh
+                    DataAdapter.startListeners(); 
                 } else {
                     await setDoc(doc(collection(state.db, 'artifacts', state.appId, 'users', state.user.uid, 'santri')), {
                         ...data, createdAt: serverTimestamp()
@@ -305,6 +451,26 @@
             }
         };
 
+        // --- HELPER FUNCTIONS ---
+        function updateConnectionStatus(isOnline) {
+            const el = document.getElementById('connection-status');
+            if (!el) return;
+            if (isOnline) {
+                el.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-400"></div> Cloud Online';
+                el.className = "mb-2 px-2 py-1 rounded bg-emerald-800 text-emerald-200 flex items-center justify-center gap-1 text-xs";
+            } else {
+                el.innerHTML = '<div class="w-2 h-2 rounded-full bg-yellow-400"></div> Mode Lokal';
+                el.className = "mb-2 px-2 py-1 rounded bg-gray-700 text-gray-200 flex items-center justify-center gap-1 text-xs";
+            }
+        }
+
+        function finishLoading() {
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('app-container').classList.remove('hidden');
+            document.getElementById('mobile-nav').classList.remove('hidden');
+            renderApp();
+        }
+
         // --- INIT APP ---
         DataAdapter.init();
 
@@ -316,7 +482,7 @@
 
         // --- RENDER LOGIC ---
         function renderApp() {
-            if (!state.user) return; // Wait for auth/offline user
+            if (!state.user && !state.isOffline) return; 
             updateNavUI();
             const content = document.getElementById('content-area');
             content.innerHTML = '';
@@ -347,10 +513,12 @@
         function updateGlobalUI() {
             const name = state.schoolProfile?.namaPondok || 'SIAP';
             const sub = state.schoolProfile?.namaPondok ? 'Sistem Informasi' : 'Sistem Absensi Pesantren';
-            document.getElementById('sidebar-title').innerText = name;
-            document.getElementById('mobile-title').innerText = name;
-            document.getElementById('sidebar-subtitle').innerText = sub;
-            document.getElementById('footer-school-name').innerText = state.schoolProfile?.namaPondok || 'Pondok Pesantren';
+            const nameEls = ['sidebar-title', 'mobile-title'];
+            nameEls.forEach(id => { const el = document.getElementById(id); if(el) el.innerText = name; });
+            const subEls = ['sidebar-subtitle'];
+            subEls.forEach(id => { const el = document.getElementById(id); if(el) el.innerText = sub; });
+            const footEl = document.getElementById('footer-school-name');
+            if(footEl) footEl.innerText = state.schoolProfile?.namaPondok || 'Pondok Pesantren';
         }
 
         // 1. DASHBOARD
@@ -358,8 +526,7 @@
             const today = new Date().toISOString().split('T')[0];
             const todaySessions = state.attendanceRecords.filter(r => r.date === today);
             
-            let totalPresent = 0;
-            let totalEntries = 0;
+            let totalPresent = 0, totalEntries = 0;
             todaySessions.forEach(session => {
                 Object.values(session.data).forEach(status => {
                     if (status === 'H') totalPresent++;
@@ -379,7 +546,7 @@
                             <p class="text-emerald-100 text-sm md:text-base">
                                 Selamat datang di Dashboard ${state.schoolProfile?.namaPondok || 'Sistem Informasi Pesantren'}.
                             </p>
-                            ${state.isOffline ? '<p class="mt-2 text-yellow-300 text-xs bg-yellow-900/50 inline-block px-2 py-1 rounded">⚠️ Mode Penyimpanan Lokal (Data hanya tersimpan di browser ini)</p>' : ''}
+                            ${state.isOffline ? '<div class="mt-3 bg-yellow-600/30 border border-yellow-500/50 p-2 rounded text-xs text-yellow-100 flex items-start gap-2"><i data-lucide="wifi-off" class="w-4 h-4 mt-0.5 flex-shrink-0"></i> <span>Anda dalam <b>Mode Offline (Lokal)</b>. Data hanya tersimpan di perangkat ini. Hubungkan database di menu Profil untuk sinkronisasi online.</span></div>' : '<div class="mt-3 bg-emerald-600/30 border border-emerald-500/50 p-2 rounded text-xs text-emerald-100 flex items-center gap-2"><i data-lucide="cloud" class="w-4 h-4"></i> <span>Data tersimpan aman di Cloud Server.</span></div>'}
                         </div>
                     </div>
 
@@ -518,7 +685,7 @@
             window.setStatus = (id, status) => {
                 state.absensiForm.data[id] = status;
                 state.absensiForm.isSaved = false;
-                renderAttendanceInput(container); // Re-render to update UI state properly
+                renderAttendanceInput(container); 
             };
 
             window.saveAbsensi = async () => {
@@ -619,9 +786,55 @@
             container.innerHTML = html;
         }
 
-        // 5. PROFILE
+        // 5. PROFILE & DATABASE SETTINGS (UPDATED)
         function renderProfileSettings(container) {
             window.updateProfileForm = (field, val) => { state.profileForm[field] = val; };
+            
+            // --- GOOGLE DRIVE HANDLERS ---
+            window.saveDriveConfig = () => {
+                const clientId = document.getElementById('gd-client-id').value;
+                const apiKey = document.getElementById('gd-api-key').value;
+                if(!clientId || !apiKey) return alert("Client ID dan API Key tidak boleh kosong!");
+                
+                state.gDrive.config = { clientId, apiKey };
+                localStorage.setItem('gdrive_config', JSON.stringify(state.gDrive.config));
+                alert("Konfigurasi Drive tersimpan!");
+                GDriveAdapter.loadGapi();
+            };
+
+            window.loginDrive = () => {
+                GDriveAdapter.login();
+            };
+
+            window.backupToDrive = () => {
+                GDriveAdapter.saveToDrive();
+            };
+
+            window.restoreFromDrive = () => {
+                GDriveAdapter.loadFromDrive();
+            };
+
+            // --- FUNGSI SAVE CONFIG DATABASE (EXISTING) ---
+            window.saveCloudConfig = () => {
+                const input = document.getElementById('firebase-config-input').value;
+                try {
+                    const json = JSON.parse(input);
+                    if(!json.apiKey || !json.projectId) throw new Error("Format config salah");
+                    localStorage.setItem('user_firebase_config', JSON.stringify(json));
+                    alert("Konfigurasi tersimpan! Aplikasi akan dimuat ulang.");
+                    window.location.reload();
+                } catch(e) {
+                    alert("Error: Format JSON tidak valid.");
+                }
+            };
+
+            window.resetCloudConfig = () => {
+                if(confirm("Hapus koneksi cloud dan kembali ke mode lokal?")) {
+                    localStorage.removeItem('user_firebase_config');
+                    window.location.reload();
+                }
+            };
+
             window.saveProfile = async (e) => {
                 e.preventDefault();
                 const btn = document.getElementById('save-profile-btn');
@@ -634,9 +847,12 @@
                 lucide.createIcons();
             };
 
+            const hasCustomConfig = !!localStorage.getItem('user_firebase_config');
+
             const html = `
-                <div class="max-w-2xl mx-auto space-y-6 fade-in">
-                    <div><h2 class="text-2xl font-bold text-gray-800">Profil Pondok Pesantren</h2><p class="text-gray-500">Atur identitas lembaga.</p></div>
+                <div class="max-w-2xl mx-auto space-y-6 fade-in pb-12">
+                    <div><h2 class="text-2xl font-bold text-gray-800">Profil & Database</h2><p class="text-gray-500">Atur identitas lembaga dan koneksi server.</p></div>
+                    
                     <form onsubmit="saveProfile(event)" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-4">
                         <div><label class="block text-sm font-semibold text-gray-700 mb-1">Nama Pondok</label><input type="text" value="${state.profileForm.namaPondok || ''}" onchange="updateProfileForm('namaPondok', this.value)" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
                         <div><label class="block text-sm font-semibold text-gray-700 mb-1">Pengasuh</label><input type="text" value="${state.profileForm.pengasuh || ''}" onchange="updateProfileForm('pengasuh', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
@@ -644,6 +860,75 @@
                          <div><label class="block text-sm font-semibold text-gray-700 mb-1">Kontak</label><input type="text" value="${state.profileForm.kontak || ''}" onchange="updateProfileForm('kontak', this.value)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></div>
                         <div class="pt-4"><button type="submit" id="save-profile-btn" class="w-full bg-emerald-600 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i data-lucide="save" class="w-4 h-4"></i> Simpan Profil</button></div>
                     </form>
+
+                    <!-- GOOGLE DRIVE SECTION -->
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-100">
+                        <div class="flex items-center gap-2 mb-2">
+                             <div class="bg-blue-100 p-2 rounded-full"><i data-lucide="hard-drive" class="text-blue-600 w-5 h-5"></i></div>
+                             <h3 class="text-lg font-bold text-gray-800">Google Drive Backup (iyaanend2@gmail.com)</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-4">
+                            Simpan backup data ke Google Drive Anda. Anda harus memasukkan <b>Client ID</b> dan <b>API Key</b> dari Google Cloud Console.
+                        </p>
+
+                        <div class="space-y-4 mb-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Client ID</label>
+                                    <input type="text" id="gd-client-id" value="${state.gDrive.config.clientId || ''}" class="w-full p-2 text-xs border border-gray-300 rounded-lg" placeholder="xxx.apps.googleusercontent.com">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">API Key</label>
+                                    <input type="text" id="gd-api-key" value="${state.gDrive.config.apiKey || ''}" class="w-full p-2 text-xs border border-gray-300 rounded-lg" placeholder="AIzaSy...">
+                                </div>
+                            </div>
+                            <button onclick="saveDriveConfig()" class="text-xs bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded">Simpan Config Drive</button>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row gap-3 items-center border-t border-gray-100 pt-4">
+                            <button onclick="loginDrive()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition w-full md:w-auto justify-center">
+                                <i data-lucide="log-in" class="w-4 h-4"></i> Login Google
+                            </button>
+                            <span id="gd-status" class="text-xs text-gray-500">${state.gDrive.connected ? '<span class="text-green-600 font-bold">Terhubung</span>' : 'Belum Login'}</span>
+                        </div>
+
+                        ${state.gDrive.connected ? `
+                        <div class="grid grid-cols-2 gap-4 mt-4 animate-in fade-in">
+                            <button onclick="backupToDrive()" class="flex flex-col items-center justify-center p-3 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100 transition text-blue-800">
+                                <i data-lucide="upload-cloud" class="w-6 h-6 mb-1"></i>
+                                <span class="text-xs font-bold">Backup ke Drive</span>
+                            </button>
+                            <button onclick="restoreFromDrive()" class="flex flex-col items-center justify-center p-3 border border-orange-200 bg-orange-50 rounded-lg hover:bg-orange-100 transition text-orange-800">
+                                <i data-lucide="download-cloud" class="w-6 h-6 mb-1"></i>
+                                <span class="text-xs font-bold">Restore dari Drive</span>
+                            </button>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- FIREBASE CONFIG (EXISTING) -->
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-emerald-100">
+                        <div class="flex items-center gap-2 mb-2">
+                             <i data-lucide="cloud" class="text-emerald-600"></i>
+                             <h3 class="text-lg font-bold text-gray-800">Sinkronisasi Realtime (Firebase)</h3>
+                        </div>
+                        
+                        ${hasCustomConfig ? 
+                            `<div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 flex items-center justify-between">
+                                <div class="flex items-center gap-2 text-green-800 font-medium text-sm">
+                                    <i data-lucide="check-circle" class="w-5 h-5"></i> Terhubung ke Konfigurasi Cloud Anda
+                                </div>
+                                <button onclick="resetCloudConfig()" class="text-xs text-red-600 hover:underline bg-white px-2 py-1 rounded border border-red-200">Putuskan Koneksi</button>
+                            </div>` : 
+                            `<div class="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
+                                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Tempel Kode Config (JSON) Di Sini</label>
+                                <textarea id="firebase-config-input" rows="5" placeholder='{"apiKey": "AIzaSy...", "authDomain": "...", "projectId": "..."}' class="w-full p-2 text-xs font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"></textarea>
+                            </div>
+                            <div class="flex gap-3">
+                                <button onclick="saveCloudConfig()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 shadow-sm flex items-center gap-2"><i data-lucide="link" class="w-4 h-4"></i> Hubungkan ke Cloud</button>
+                            </div>`
+                        }
+                    </div>
                 </div>`;
             container.innerHTML = html;
         }

@@ -847,56 +847,42 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // --- FITUR 1: SIMPAN SANTRI (BARU) ---
   window.simpanSantriKeFirebase = async function() {
-      const sForm = window.state.santriForm;
-      if (!sForm.name) { alert("Nama tidak boleh kosong!"); return; }
+      const nama = document.getElementById('s-nama').value;
+      if (!nama) { alert("Nama tidak boleh kosong!"); return; }
 
       try {
           await addDoc(collection(db, "daftar_santri"), {
-              nama: sForm.name,
-              gender: sForm.gender,
-              kelas: sForm.class,
-              kamar: sForm.room
+              nama: nama,
+              gender: document.getElementById('s-gender').value,
+              kelas: document.getElementById('s-kelas').value,
+              kamar: document.getElementById('s-kamar').value
           });
-          alert("✅ Nama Santri Berhasil Disimpan Permanen!");
-          window.ambilDaftarSantri(); // Update list di layar
+          alert("✅ Berhasil Simpan Permanen ke Firebase!");
+          window.ambilDaftarSantri();
+          toggleAddSantri(); // Tutup form setelah simpan
       } catch (e) { alert("Gagal: " + e.message); }
   }
 
-  // --- FITUR 2: AMBIL DAFTAR SANTRI (BARU) ---
   window.ambilDaftarSantri = async function() {
       try {
           const snap = await getDocs(collection(db, "daftar_santri"));
-          window.state.santriList = [];
-          snap.forEach(doc => {
-              const d = doc.data();
-              window.state.santriList.push({ id: doc.id, name: d.nama, gender: d.gender, class: d.kelas, room: d.kamar });
-          });
-          // Refresh tampilan jika sedang di menu santri
-          if(window.state.activeTab === 'santri') renderSantriManager(document.getElementById('content-area'));
+          window.state.santriList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          renderApp();
       } catch (e) { console.error(e); }
   }
 
-  // --- FITUR 3: SIMPAN ABSENSI (YANG KEMARIN) ---
-  window.simpanKeFirebase = async function() {
-      let dataForm = window.state.absensiForm;
+  window.ambilDataLaporan = async function() {
       try {
-          await addDoc(collection(db, "laporan_absensi"), {
-              tanggal: dataForm.date,
-              kegiatan: dataForm.activity,
-              detail_kehadiran: dataForm.data
-          });
-          alert("✅ Data Absensi Berhasil Disimpan!");
-          window.ambilDataLaporan();
-      } catch (e) { alert("Gagal: " + e.message); }
+          const snap = await getDocs(collection(db, "laporan_absensi"));
+          window.state.attendanceRecords = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          renderApp();
+      } catch (e) { console.error(e); }
   }
 
-  // Jalankan penarikan data santri pertama kali saat web dibuka
+  // Jalankan penarikan data otomatis
   window.ambilDaftarSantri();
-  // Tambahkan ini di baris paling bawah agar data ditarik otomatis saat web dibuka
-window.ambilDaftarSantri();
-window.ambilDataLaporan();
+  window.ambilDataLaporan();
 </script>
 </body>
 </html>

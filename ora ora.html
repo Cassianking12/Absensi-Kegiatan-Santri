@@ -558,7 +558,7 @@
                                 </div>
                             </div>
                             <div class="flex justify-end">
-                                <button type="button" id="btn-simpan-asli" onclick="simpanKeFirebase()" class="${themeBtn} text-white px-6 py-2 rounded-lg font-medium">Simpan Data</button>
+                               <button onclick="simpanSantriKeFirebase()" class="${themeBtn} text-white px-6 py-2 rounded-lg font-medium">Simpan Data</button>
                             </div>
                         </form>
                     </div>
@@ -831,7 +831,7 @@
             container.innerHTML = html;
         }
     </script>
-    <script type="module">
+   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -847,88 +847,53 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // FUNGSI 1: SIMPAN (Tetap sama)
+  // --- FITUR 1: SIMPAN SANTRI (BARU) ---
+  window.simpanSantriKeFirebase = async function() {
+      const sForm = window.state.santriForm;
+      if (!sForm.name) { alert("Nama tidak boleh kosong!"); return; }
+
+      try {
+          await addDoc(collection(db, "daftar_santri"), {
+              nama: sForm.name,
+              gender: sForm.gender,
+              kelas: sForm.class,
+              kamar: sForm.room
+          });
+          alert("✅ Nama Santri Berhasil Disimpan Permanen!");
+          window.ambilDaftarSantri(); // Update list di layar
+      } catch (e) { alert("Gagal: " + e.message); }
+  }
+
+  // --- FITUR 2: AMBIL DAFTAR SANTRI (BARU) ---
+  window.ambilDaftarSantri = async function() {
+      try {
+          const snap = await getDocs(collection(db, "daftar_santri"));
+          window.state.santriList = [];
+          snap.forEach(doc => {
+              const d = doc.data();
+              window.state.santriList.push({ id: doc.id, name: d.nama, gender: d.gender, class: d.kelas, room: d.kamar });
+          });
+          // Refresh tampilan jika sedang di menu santri
+          if(window.state.activeTab === 'santri') renderSantriManager(document.getElementById('content-area'));
+      } catch (e) { console.error(e); }
+  }
+
+  // --- FITUR 3: SIMPAN ABSENSI (YANG KEMARIN) ---
   window.simpanKeFirebase = async function() {
-      let dataForm = window.state.absensiForm; 
-      if (!dataForm || !dataForm.date) { alert("Isi tanggal dulu!"); return; }
-
-      const tombol = document.getElementById('btn-simpan-asli');
-      if(tombol) tombol.innerText = "⏳ Mengirim...";
-
+      let dataForm = window.state.absensiForm;
       try {
           await addDoc(collection(db, "laporan_absensi"), {
               tanggal: dataForm.date,
               kegiatan: dataForm.activity,
-              detail_kehadiran: dataForm.data,
-              waktu_input: new Date().toString()
+              detail_kehadiran: dataForm.data
           });
-          alert("✅ ALHAMDULILLAH! Data Masuk!");
-          if(tombol) tombol.innerText = "Simpan Data";
-          // Setelah simpan, langsung update laporan juga biar canggih
-          window.ambilDataLaporan(); 
-      } catch (error) {
-          alert("❌ Gagal: " + error.message);
-      }
+          alert("✅ Data Absensi Berhasil Disimpan!");
+          window.ambilDataLaporan();
+      } catch (e) { alert("Gagal: " + e.message); }
   }
 
-  // FUNGSI 2: AMBIL DATA (Ini yang BARU)
-  window.ambilDataLaporan = async function() {
-    console.log("Sedang menyedot data dari Firebase...");
-    try {
-        const querySnapshot = await getDocs(collection(db, "laporan_absensi"));
-        if(window.state) {
-            window.state.attendanceRecords = []; 
-            
-            querySnapshot.forEach((doc) => {
-                const dataFB = doc.data();
-                window.state.attendanceRecords.push({
-                    date: dataFB.tanggal,
-                    activity: dataFB.kegiatan,
-                    data: dataFB.detail_kehadiran || {}
-                });
-            });
-
-            console.log("Data masuk ke memori:", window.state.attendanceRecords);
-
-            // INI KUNCINYA: Paksa layar laporan untuk update tampilan
-            if(window.renderReports && window.state.activeTab === 'laporan') {
-                const container = document.getElementById('content-area');
-                window.renderReports(container);
-            }
-        }
-    } catch (error) {
-        console.error("Gagal ambil data:", error);
-    }
-}
-      
-      try {
-          // Ambil semua data dari folder 'laporan_absensi'
-          const querySnapshot = await getDocs(collection(db, "laporan_absensi"));
-          
-          if(window.state) {
-              // Kosongkan memori lama biar tidak dobel
-              window.state.attendanceRecords = []; 
-              
-              querySnapshot.forEach((doc) => {
-                  const dataFB = doc.data();
-                  // Masukkan data Firebase ke tabel kamu
-                  window.state.attendanceRecords.push({
-                      date: dataFB.tanggal,
-                      activity: dataFB.kegiatan,
-                      data: dataFB.detail_kehadiran
-                  });
-              });
-              
-              // Refresh Tampilan Laporan (Jika sedang dibuka)
-              if(window.renderReports && window.state.activeTab === 'laporan') {
-                  const container = document.getElementById('content-area');
-                  window.renderReports(container);
-              }
-          }
-      } catch (error) {
-          console.error("Gagal ambil data:", error);
-      }
-  }
+  // Jalankan penarikan data santri pertama kali saat web dibuka
+  window.ambilDaftarSantri();
 </script>
 </body>
 </html>
